@@ -14,40 +14,98 @@
     align-items: center;
     padding: 20px;
   }
-  h1 { margin-bottom: 10px; }
-  .controls { margin-bottom: 20px; }
+
+  h1 {
+    margin-bottom: 10px;
+  }
+
+  .controls {
+    margin-bottom: 20px;
+  }
+
   button {
-    background: #2a2a2a; border: none; color: #fff;
-    padding: 8px 14px; margin: 4px;
-    border-radius: 6px; cursor: pointer;
+    background: #2a2a2a;
+    border: none;
+    color: #fff;
+    padding: 8px 14px;
+    margin: 4px;
+    border-radius: 6px;
+    cursor: pointer;
     transition: background 0.3s;
   }
-  button:hover { background: #444; }
+  button:hover {
+    background: #444;
+  }
+
   #timers-container {
-    display: grid; grid-template-columns: repeat(3, 1fr);
-    gap: 15px; width: 90%; max-width: 900px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 15px;
+    width: 90%;
+    max-width: 900px;
   }
+
   .timer {
-    background: #1c1c1c; border: 1px solid #333;
-    border-radius: 10px; padding: 10px;
-    display: flex; flex-direction: column; align-items: center;
+    background: #1c1c1c;
+    border: 1px solid #333;
+    border-radius: 10px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
   }
-  .timer.completed { background: #164d16; border-color: #1d7a1d; }
-  .timer h3 { margin: 5px 0; }
-  .timer p { margin: 2px 0; }
-  .timer .buttons { display: flex; gap: 6px; }
-  .draggable { cursor: move; }
+
+  .timer.completed {
+    background: #164d16;
+    border-color: #1d7a1d;
+  }
+
+  .timer h3 {
+    margin: 5px 0;
+  }
+
+  .timer p {
+    margin: 2px 0;
+  }
+
+  .timer .buttons {
+    display: flex;
+    gap: 6px;
+  }
+
+  .draggable {
+    cursor: move;
+  }
+
   .input-group {
-    display: flex; gap: 5px; flex-wrap: wrap;
-    justify-content: center; margin-top: 8px;
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 8px;
   }
+
   input, textarea {
-    padding: 6px; border-radius: 5px;
-    border: 1px solid #555; background: #181818; color: #eee;
+    padding: 6px;
+    border-radius: 5px;
+    border: 1px solid #555;
+    background: #181818;
+    color: #eee;
   }
-  textarea { resize: vertical; }
-  .hidden { display: none; }
-  #userSection { margin-bottom: 20px; text-align: center; }
+
+  textarea {
+    resize: vertical;
+  }
+
+  .hidden {
+    display: none;
+  }
+
+  #userSection {
+    margin-bottom: 20px;
+    text-align: center;
+  }
+
 </style>
 </head>
 <body>
@@ -102,12 +160,11 @@
   const auth = getAuth(app);
   const provider = new GoogleAuthProvider();
 
-  const ALLOWED_EMAILS = ["20160800armando@gmail.com"];
-
   let dbRef;
   let timers = [];
   let dayStarted = null;
   let dayEnded = null;
+  let dayNum = 0;
   let dragSrc = null;
 
   // 🧠 funciones de auth
@@ -128,13 +185,15 @@
     await signOut(auth);
   };
 
+const ALLOWED_EMAIL = "20160800armando@gmail.com";
+
   onAuthStateChanged(auth, async (user) => {
     if (user) {
-      if (!ALLOWED_EMAILS.includes(user.email)) {
-        alert("No tienes acceso autorizado.");
-        await signOut(auth);
-        return;
-      }
+if (user.email !== ALLOWED_EMAIL) {
+      alert("No tienes acceso autorizado.");
+      await signOut(auth); // cierra sesión si no es el correo permitido
+      return;
+    }
       loginBtn.classList.add("hidden");
       logoutBtn.classList.remove("hidden");
       controls.classList.remove("hidden");
@@ -221,18 +280,28 @@
     });
   }
 
-  // 🕹️ Control de cronómetros
-  window.toggleTimer = (i) => {
-    if (!dayStarted) return alert("Debes iniciar el día antes de activar los cronómetros.");
-    timers[i].running = !timers[i].running;
-    renderTimers(); saveToFirebase();
+  window.toggleTimer = (index) => {
+    if (!dayStarted) {
+      alert("Debes iniciar el día antes de activar los cronómetros.");
+      return;
+    }
+    timers[index].running = !timers[index].running;
+    renderTimers();
+    saveToFirebase();
   };
-  window.resetTimer = (i) => {
-    timers[i].elapsed = 0; timers[i].running = false; timers[i].completed = false;
-    renderTimers(); saveToFirebase();
+
+  window.resetTimer = (index) => {
+    timers[index].elapsed = 0;
+    timers[index].running = false;
+    timers[index].completed = false;
+    renderTimers();
+    saveToFirebase();
   };
-  window.deleteTimer = (i) => {
-    timers.splice(i, 1); renderTimers(); saveToFirebase();
+
+  window.deleteTimer = (index) => {
+    timers.splice(index, 1);
+    renderTimers();
+    saveToFirebase();
   };
 
   setInterval(() => {
@@ -248,42 +317,47 @@
     renderTimers();
   }, 1000);
 
-  // 📆 Control del día
   document.getElementById("startDayBtn").onclick = () => {
     if (dayStarted) return alert("El día ya ha comenzado.");
+    dayNum++;
     dayStarted = new Date().toISOString();
     alert(`Día iniciado: ${new Date(dayStarted).toLocaleString()}`);
     saveToFirebase();
   };
+
   document.getElementById("endDayBtn").onclick = () => {
     if (!dayStarted) return alert("El día no ha comenzado aún.");
     dayEnded = new Date().toISOString();
     timers.forEach(t => { t.running = false; t.elapsed = 0; t.completed = false; });
     alert(`Día finalizado: ${new Date(dayEnded).toLocaleString()}`);
     dayStarted = null;
-    renderTimers(); saveToFirebase();
+    renderTimers();
+    saveToFirebase();
   };
 
-  // ➕ Crear nuevo cronómetro
   document.getElementById("addTimerBtn").onclick = () => {
     document.getElementById("formSection").classList.toggle("hidden");
   };
+
   document.getElementById("createTimerBtn").onclick = () => {
     const name = document.getElementById("activityName").value.trim();
     const target = Number(document.getElementById("targetMinutes").value);
     const note = document.getElementById("note").value.trim();
+
     if (!name || !target) return alert("Debes ingresar nombre y tiempo objetivo.");
     timers.push({ name, target, note, elapsed: 0, running: false, completed: false });
     document.getElementById("activityName").value = "";
     document.getElementById("targetMinutes").value = "";
     document.getElementById("note").value = "";
     document.getElementById("formSection").classList.add("hidden");
-    renderTimers(); saveToFirebase();
+    renderTimers();
+    saveToFirebase();
   };
 
   renderTimers();
 </script>
 </body>
 </html>
+
 
 
