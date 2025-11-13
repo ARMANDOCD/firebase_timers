@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Gestor de Cronómetros</title>
+<style>
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #101010;
+    color: #eee;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+  }
+
+  h1 {
+    margin-bottom: 10px;
+  }
+
+  .controls {
+    margin-bottom: 20px;
+  }
+
+  button {
+    background: #2a2a2a;
+    border: none;
+    color: #fff;
+    padding: 8px 14px;
+    margin: 4px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.3s;
+  }
+  button:hover {
+    background: #444;
+  }
+
+  #timers-container {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 15px;
+    width: 90%;
+    max-width: 900px;
+  }
+
+  .timer {
+    background: #1c1c1c;
+    border: 1px solid #333;
+    border-radius: 10px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .timer.completed {
+    background: #164d16;
+    border-color: #1d7a1d;
+  }
+
+  .timer h3 {
+    margin: 5px 0;
+  }
+
+  .timer p {
+    margin: 2px 0;
+  }
+
+  .timer .buttons {
+    display: flex;
+    gap: 6px;
+  }
+
+  .draggable {
+    cursor: move;
+  }
+
+  .input-group {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 8px;
+  }
+
+  input, textarea {
+    padding: 6px;
+    border-radius: 5px;
+    border: 1px solid #555;
+    background: #181818;
+    color: #eee;
+  }
+
+  textarea {
+    resize: vertical;
+  }
+
+  .hidden {
+    display: none;
+  }
+
+  #userSection {
+    margin-bottom: 20px;
+    text-align: center;
+  }
+
+</style>
+</head>
+<body>
+
+<h1>Gestor de Cronómetros</h1>
+
+<!-- 🔐 Sección de login -->
+<div id="userSection">
+  <button id="loginBtn">🔑 Iniciar con Google</button>
+  <button id="logoutBtn" class="hidden">🚪 Cerrar sesión</button>
+  <p id="userInfo"></p>
+</div>
+
+<div class="controls hidden" id="mainControls">
+  <button id="startDayBtn">🌅 Iniciar Día</button>
+  <button id="endDayBtn">🌇 Finalizar Día</button>
+  <button id="addTimerBtn">➕ Nuevo Cronómetro</button>
+</div>
+
+<div id="formSection" class="hidden">
+  <div class="input-group">
+    <input type="text" id="activityName" placeholder="Nombre de la actividad">
+    <input type="number" id="targetMinutes" placeholder="Minutos objetivo" min="1">
+  </div>
+  <div class="input-group">
+    <textarea id="note" placeholder="Nota (opcional)"></textarea>
+  </div>
+  <button id="createTimerBtn">Crear</button>
+</div>
+
+<div id="timers-container"></div>
+
+<!-- 🔥 Firebase + lógica principal -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+  import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+
+  // 🔧 Configuración de Firebase
+  const firebaseConfig = {
+    apiKey: "AIzaSyCby9oxzPzBDllkzuW21ZoGNJh67UgYZ8E",
+    authDomain: "notion-timers-2a3bb.firebaseapp.com",
+    databaseURL: "https://notion-timers-2a3bb-default-rtdb.firebaseio.com",
+    projectId: "notion-timers-2a3bb",
+    storageBucket: "notion-timers-2a3bb.firebasestorage.app",
+    messagingSenderId: "78500747038",
+    appId: "1:78500747038:web:2b5fdec3731a203c7f1b0f"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+  const auth = getAuth(app);
+  const provider = new GoogleAuthProvider();
+
+  let dbRef;
+  let timers = [];
+  let dayStarted = null;
+  let dayEnded = null;
+  let dayNum = 0;
+  let dragSrc = null;
+
+  // 🧠 funciones de auth
+  const loginBtn = document.getElementById("loginBtn");
+  const logoutBtn = document.getElementById("logoutBtn");
+  const userInfo = document.getElementById("userInfo");
+  const controls = document.getElementById("mainControls");
+
+  loginBtn.onclick = async () => {
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (err) {
+      alert("Error al iniciar sesión: " + err.message);
+    }
+  };
+
+  logoutBtn.onclick = async () => {
+    await signOut(auth);
+  };
+
+  onAuthStateChanged(auth, user => {
+    if (user) {
+      loginBtn.classList.add("hidden");
+      logoutBtn.classList.remove("hidden");
+      controls.classList.remove("hidden");
+      userInfo.textContent = `Conectado como: ${user.displayName}`;
+      dbRef = ref(db, `usuarios/${user.uid}/cronometros/diaActual`);
+      listenToData();
+    } else {
+      loginBtn.classList.remove("hidden");
+      logoutBtn.classList.add("hidden");
+      controls.classList.add("hidden");
+      userInfo.textContent = "";
+      timers = [];
+      renderTimers();
+    }
+  });
+
+  // 🕓 formato hh:mm:ss
+  function formatTime(seconds) {
+    const h = String(Math.floor(seconds / 3600)).padStart(2, "0");
+    const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
+    const s = String(seconds % 60).padStart(2, "0");
+    return `${h}:${m}:${s}`;
+  }
+
+  // 💾 Guarda todo el estado actual en Firebase
+  function saveToFirebase() {
+    if (!dbRef) return;
+    set(dbRef, {
+      timers,
+      dayStarted,
+      dayEnded,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  // 🔁 Escucha cambios en tiempo real desde Firebase
+  function listenToData() {
+    onValue(dbRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        timers = data.timers || [];
+        dayStarted = data.dayStarted || null;
+        dayEnded = data.dayEnded || null;
+        renderTimers();
+      }
+    });
+  }
+
+  // 🧱 renderiza cronómetros
+  function renderTimers() {
+    const container = document.getElementById("timers-container");
+    container.innerHTML = "";
+    timers.forEach((t, index) => {
+      const div = document.createElement("div");
+      div.className = "timer draggable" + (t.completed ? " completed" : "");
+      div.draggable = true;
+
+      div.innerHTML = `
+        <h3>${t.name}</h3>
+        <p>Objetivo: ${t.target} min</p>
+        <p>Tiempo: <span>${formatTime(t.elapsed)}</span></p>
+        ${t.note ? `<p><i>${t.note}</i></p>` : ""}
+        <div class="buttons">
+          <button onclick="toggleTimer(${index})">${t.running ? "⏸️ Pausa" : "▶️ Iniciar"}</button>
+          <button onclick="resetTimer(${index})">🔄 Reset</button>
+          <button onclick="deleteTimer(${index})">🗑️ Borrar</button>
+        </div>
+      `;
+
+      div.addEventListener("dragstart", e => (dragSrc = index));
+      div.addEventListener("dragover", e => e.preventDefault());
+      div.addEventListener("drop", e => {
+        e.preventDefault();
+        if (dragSrc !== index) {
+          const temp = timers[dragSrc];
+          timers.splice(dragSrc, 1);
+          timers.splice(index, 0, temp);
+          renderTimers();
+          saveToFirebase();
+        }
+      });
+
+      container.appendChild(div);
+    });
+  }
+
+  window.toggleTimer = (index) => {
+    if (!dayStarted) {
+      alert("Debes iniciar el día antes de activar los cronómetros.");
+      return;
+    }
+    timers[index].running = !timers[index].running;
+    renderTimers();
+    saveToFirebase();
+  };
+
+  window.resetTimer = (index) => {
+    timers[index].elapsed = 0;
+    timers[index].running = false;
+    timers[index].completed = false;
+    renderTimers();
+    saveToFirebase();
+  };
+
+  window.deleteTimer = (index) => {
+    timers.splice(index, 1);
+    renderTimers();
+    saveToFirebase();
+  };
+
+  setInterval(() => {
+    let updated = false;
+    timers.forEach(t => {
+      if (t.running) {
+        t.elapsed++;
+        updated = true;
+        if (t.elapsed >= t.target * 60 && !t.completed) t.completed = true;
+      }
+    });
+    if (updated) saveToFirebase();
+    renderTimers();
+  }, 1000);
+
+  document.getElementById("startDayBtn").onclick = () => {
+    if (dayStarted) return alert("El día ya ha comenzado.");
+    dayNum++;
+    dayStarted = new Date().toISOString();
+    alert(`Día iniciado: ${new Date(dayStarted).toLocaleString()}`);
+    saveToFirebase();
+  };
+
+  document.getElementById("endDayBtn").onclick = () => {
+    if (!dayStarted) return alert("El día no ha comenzado aún.");
+    dayEnded = new Date().toISOString();
+    timers.forEach(t => { t.running = false; t.elapsed = 0; t.completed = false; });
+    alert(`Día finalizado: ${new Date(dayEnded).toLocaleString()}`);
+    dayStarted = null;
+    renderTimers();
+    saveToFirebase();
+  };
+
+  document.getElementById("addTimerBtn").onclick = () => {
+    document.getElementById("formSection").classList.toggle("hidden");
+  };
+
+  document.getElementById("createTimerBtn").onclick = () => {
+    const name = document.getElementById("activityName").value.trim();
+    const target = Number(document.getElementById("targetMinutes").value);
+    const note = document.getElementById("note").value.trim();
+
+    if (!name || !target) return alert("Debes ingresar nombre y tiempo objetivo.");
+    timers.push({ name, target, note, elapsed: 0, running: false, completed: false });
+    document.getElementById("activityName").value = "";
+    document.getElementById("targetMinutes").value = "";
+    document.getElementById("note").value = "";
+    document.getElementById("formSection").classList.add("hidden");
+    renderTimers();
+    saveToFirebase();
+  };
+
+  renderTimers();
+</script>
+</body>
+</html>
