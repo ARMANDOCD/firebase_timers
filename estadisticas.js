@@ -19,9 +19,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-// ---------------- CONTENEDOR ----------------
-const statsContainer = document.getElementById("statsGeneralEmbed");
-
 // ---------------- UTIL ----------------
 function formatTime(totalSec){
   const h = Math.floor(totalSec/3600);
@@ -32,6 +29,9 @@ function formatTime(totalSec){
 
 // ---------------- MAIN ----------------
 export async function renderStatsGeneral(){
+  const statsContainer = document.getElementById("statsGeneralEmbed"); // <-- mover aquí
+  if(!statsContainer) return;
+
   statsContainer.innerHTML = "<p>Cargando estadísticas...</p>";
 
   const usuariosRef = ref(db, "usuarios");
@@ -45,28 +45,24 @@ export async function renderStatsGeneral(){
 
     if(cron.historico){
       Object.entries(cron.historico).forEach(([dayid, dayobj])=>{
-        const day_start = dayobj.dayStarted;
-        const day_end   = dayobj.dayEnded;
-        const timers    = dayobj.timers || [];
+        const timers = dayobj.timers || [];
         timers.forEach(t=>{
           rows.push({
             uid, dayId: dayid, name: t.name, target_min: t.target, elapsed_sec: t.elapsed,
             completed: t.completed, note: t.note, createdAt: t.createdAt,
-            dayStarted: day_start, dayEnded: day_end
+            dayStarted: dayobj.dayStarted, dayEnded: dayobj.dayEnded
           });
         });
       });
     }
     if(cron.diaActual){
       const dia = cron.diaActual;
-      const day_start = dia.dayStarted;
-      const day_end   = dia.dayEnded;
       const timers = dia.timers || [];
       timers.forEach(t=>{
         rows.push({
           uid, dayId: "diaActual", name: t.name, target_min: t.target, elapsed_sec: t.elapsed,
           completed: t.completed, note: t.note, createdAt: t.createdAt,
-          dayStarted: day_start, dayEnded: day_end
+          dayStarted: dia.dayStarted, dayEnded: dia.dayEnded
         });
       });
     }
@@ -105,14 +101,6 @@ export async function renderStatsGeneral(){
     dayStats[d] = { total_sec, total_min, target_min, remaining_min, n_turnos, avg_activity_min, success };
   });
 
-  // Máxima racha de éxito
-  const dayArray = Object.values(dayStats);
-  let max_streak = 0, cur_streak = 0;
-  dayArray.forEach(d=>{
-    if(d.success){ cur_streak++; if(cur_streak>max_streak) max_streak=cur_streak; }
-    else cur_streak=0;
-  });
-
   // ---------------- ESTADÍSTICAS POR FECHA ----------------
   const dateStats = {};
   dateSet.forEach(ds=>{
@@ -125,14 +113,6 @@ export async function renderStatsGeneral(){
     const avg_activity_min = total_min/n_turnos;
     const success = total_min >= target_min;
     dateStats[ds] = { total_sec, total_min, target_min, remaining_min, n_turnos, avg_activity_min, success };
-  });
-
-  // Máxima racha por fecha
-  const dateArray = Object.values(dateStats);
-  let max_streak_f = 0, cur_streak_f = 0;
-  dateArray.forEach(d=>{
-    if(d.success){ cur_streak_f++; if(cur_streak_f>max_streak_f) max_streak_f=cur_streak_f; }
-    else cur_streak_f=0;
   });
 
   // ---------------- RENDER ----------------
@@ -158,5 +138,3 @@ export async function renderStatsGeneral(){
     </div>
   `;
 }
-
-
