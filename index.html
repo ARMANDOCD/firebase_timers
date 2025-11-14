@@ -15,13 +15,9 @@
     padding: 20px;
   }
 
-  h1 {
-    margin-bottom: 10px;
-  }
+  h1 { margin-bottom: 10px; }
 
-  .controls {
-    margin-bottom: 20px;
-  }
+  .controls { margin-bottom: 20px; }
 
   button {
     background: #2a2a2a;
@@ -33,9 +29,7 @@
     cursor: pointer;
     transition: background 0.3s;
   }
-  button:hover {
-    background: #444;
-  }
+  button:hover { background: #444; }
 
   #timers-container {
     display: grid;
@@ -60,22 +54,15 @@
     border-color: #1d7a1d;
   }
 
-  .timer h3 {
-    margin: 5px 0;
-  }
-
-  .timer p {
-    margin: 2px 0;
-  }
+  .timer h3 { margin: 5px 0; }
+  .timer p { margin: 2px 0; }
 
   .timer .buttons {
     display: flex;
     gap: 6px;
   }
 
-  .draggable {
-    cursor: move;
-  }
+  .draggable { cursor: move; }
 
   .input-group {
     display: flex;
@@ -93,30 +80,44 @@
     color: #eee;
   }
 
-  textarea {
-    resize: vertical;
-  }
+  textarea { resize: vertical; }
 
-  .hidden {
-    display: none;
-  }
+  .hidden { display: none; }
 
-  #userSection {
-    margin-bottom: 20px;
+  #userSection { margin-bottom: 20px; text-align: center; }
+
+  /* Panel de login */
+  #loginPanel {
+    background: #1c1c1c;
+    padding: 20px;
+    border-radius: 10px;
+    border: 1px solid #333;
     text-align: center;
   }
 
+  #loginPanel input {
+    width: 200px;
+    margin: 5px 0;
+  }
 </style>
 </head>
 <body>
 
 <h1>Gestor de Cronómetros</h1>
 
-<!-- 🔐 Sección de login -->
-<div id="userSection">
-  <button id="loginBtn">🔑 Iniciar con Google</button>
-  <button id="logoutBtn" class="hidden">🚪 Cerrar sesión</button>
+<!-- 🔐 NUEVA SECCIÓN: LOGIN EMAIL/PASSWORD -->
+<div id="loginPanel">
+  <h3>Acceso privado</h3>
+  <input type="email" id="emailInput" placeholder="Correo autorizado">
+  <input type="password" id="passwordInput" placeholder="Contraseña">
+  <button id="loginEmailBtn">Ingresar</button>
+  <p id="loginError" style="color:#ff5555;"></p>
+</div>
+
+<!-- 🔐 Info de usuario -->
+<div id="userSection" class="hidden">
   <p id="userInfo"></p>
+  <button id="logoutBtn">Cerrar sesión</button>
 </div>
 
 <div class="controls hidden" id="mainControls">
@@ -138,13 +139,17 @@
 
 <div id="timers-container"></div>
 
-<!-- 🔥 Firebase + lógica principal -->
+<!-- 🔥 Firebase + lógica -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
   import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
-  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+  import { 
+    getAuth, 
+    signInWithEmailAndPassword,
+    signOut,
+    onAuthStateChanged 
+  } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 
-  // 🔧 Configuración de Firebase
   const firebaseConfig = {
     apiKey: "AIzaSyCby9oxzPzBDllkzuW21ZoGNJh67UgYZ8E",
     authDomain: "notion-timers-2a3bb.firebaseapp.com",
@@ -158,206 +163,159 @@
   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
   const auth = getAuth(app);
-  const provider = new GoogleAuthProvider();
 
   let dbRef;
   let timers = [];
   let dayStarted = null;
   let dayEnded = null;
-  let dayNum = 0;
-  let dragSrc = null;
 
-  // 🧠 funciones de auth
-  const loginBtn = document.getElementById("loginBtn");
-  const logoutBtn = document.getElementById("logoutBtn");
-  const userInfo = document.getElementById("userInfo");
-  const controls = document.getElementById("mainControls");
+  const ALLOWED_EMAIL = "20160800armando@gmail.com"; // correo único
 
-  loginBtn.onclick = async () => {
+  // 📌 Login email/password
+  document.getElementById("loginEmailBtn").onclick = async () => {
+    const email = document.getElementById("emailInput").value;
+    const pass = document.getElementById("passwordInput").value;
+
     try {
-      await signInWithPopup(auth, provider);
-    } catch (err) {
-      alert("Error al iniciar sesión: " + err.message);
+      await signInWithEmailAndPassword(auth, email, pass);
+    } catch (e) {
+      document.getElementById("loginError").textContent = "Credenciales incorrectas";
     }
   };
 
-  logoutBtn.onclick = async () => {
-    await signOut(auth);
-  };
+  document.getElementById("logoutBtn").onclick = () => signOut(auth);
 
-const ALLOWED_EMAIL = "20160800armando@gmail.com";
+  // 📌 Cambio de estado de autenticación
+  onAuthStateChanged(auth, user => {
+    if (user && user.email === ALLOWED_EMAIL) {
+      document.getElementById("loginPanel").classList.add("hidden");
+      document.getElementById("userSection").classList.remove("hidden");
+      document.getElementById("mainControls").classList.remove("hidden");
 
-  onAuthStateChanged(auth, async (user) => {
-    if (user) {
-if (user.email !== ALLOWED_EMAIL) {
-      alert("No tienes acceso autorizado.");
-      await signOut(auth); // cierra sesión si no es el correo permitido
-      return;
-    }
-      loginBtn.classList.add("hidden");
-      logoutBtn.classList.remove("hidden");
-      controls.classList.remove("hidden");
-      userInfo.textContent = `Conectado como: ${user.displayName}`;
+      document.getElementById("userInfo").textContent = `Conectado como: ${user.email}`;
+
       dbRef = ref(db, `usuarios/${user.uid}/cronometros/diaActual`);
-      listenToData();
+      listen();
     } else {
-      loginBtn.classList.remove("hidden");
-      logoutBtn.classList.add("hidden");
-      controls.classList.add("hidden");
-      userInfo.textContent = "";
+      document.getElementById("loginPanel").classList.remove("hidden");
+      document.getElementById("userSection").classList.add("hidden");
+      document.getElementById("mainControls").classList.add("hidden");
       timers = [];
       renderTimers();
     }
   });
 
-  // 🕓 formato hh:mm:ss
-  function formatTime(seconds) {
-    const h = String(Math.floor(seconds / 3600)).padStart(2, "0");
-    const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
-    const s = String(seconds % 60).padStart(2, "0");
-    return `${h}:${m}:${s}`;
+  function listen() {
+    onValue(dbRef, snap => {
+      const data = snap.val() || {};
+      timers = data.timers || [];
+      dayStarted = data.dayStarted || null;
+      dayEnded = data.dayEnded || null;
+      renderTimers();
+    });
   }
 
-  // 💾 Guarda todo el estado actual en Firebase
-  function saveToFirebase() {
+  function save() {
     if (!dbRef) return;
-    set(dbRef, {
-      timers,
-      dayStarted,
-      dayEnded,
-      updatedAt: new Date().toISOString(),
-    });
+    set(dbRef, { timers, dayStarted, dayEnded, updatedAt: new Date().toISOString() });
   }
 
-  // 🔁 Escucha cambios en tiempo real desde Firebase
-  function listenToData() {
-    onValue(dbRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        timers = data.timers || [];
-        dayStarted = data.dayStarted || null;
-        dayEnded = data.dayEnded || null;
-        renderTimers();
-      }
-    });
+  function formatTime(s) {
+    const h = String(Math.floor(s / 3600)).padStart(2,"0");
+    const m = String(Math.floor((s%3600)/60)).padStart(2,"0");
+    const s2 = String(s%60).padStart(2,"0");
+    return `${h}:${m}:${s2}`;
   }
 
-  // 🧱 renderiza cronómetros
   function renderTimers() {
     const container = document.getElementById("timers-container");
     container.innerHTML = "";
-    timers.forEach((t, index) => {
+    timers.forEach((t,i)=>{
       const div = document.createElement("div");
       div.className = "timer draggable" + (t.completed ? " completed" : "");
       div.draggable = true;
-
       div.innerHTML = `
         <h3>${t.name}</h3>
         <p>Objetivo: ${t.target} min</p>
         <p>Tiempo: <span>${formatTime(t.elapsed)}</span></p>
         ${t.note ? `<p><i>${t.note}</i></p>` : ""}
         <div class="buttons">
-          <button onclick="toggleTimer(${index})">${t.running ? "⏸️ Pausa" : "▶️ Iniciar"}</button>
-          <button onclick="resetTimer(${index})">🔄 Reset</button>
-          <button onclick="deleteTimer(${index})">🗑️ Borrar</button>
+          <button onclick="toggleTimer(${i})">${t.running?"⏸️ Pausa":"▶️ Iniciar"}</button>
+          <button onclick="resetTimer(${i})">🔄 Reset</button>
+          <button onclick="deleteTimer(${i})">🗑️ Borrar</button>
         </div>
       `;
-
-      div.addEventListener("dragstart", e => (dragSrc = index));
-      div.addEventListener("dragover", e => e.preventDefault());
-      div.addEventListener("drop", e => {
-        e.preventDefault();
-        if (dragSrc !== index) {
-          const temp = timers[dragSrc];
-          timers.splice(dragSrc, 1);
-          timers.splice(index, 0, temp);
-          renderTimers();
-          saveToFirebase();
-        }
-      });
-
       container.appendChild(div);
     });
   }
 
-  window.toggleTimer = (index) => {
-    if (!dayStarted) {
-      alert("Debes iniciar el día antes de activar los cronómetros.");
-      return;
-    }
-    timers[index].running = !timers[index].running;
-    renderTimers();
-    saveToFirebase();
+  window.toggleTimer = i => {
+    if (!dayStarted) return alert("Primero inicia el día.");
+    timers[i].running = !timers[i].running;
+    save(); renderTimers();
   };
 
-  window.resetTimer = (index) => {
-    timers[index].elapsed = 0;
-    timers[index].running = false;
-    timers[index].completed = false;
-    renderTimers();
-    saveToFirebase();
+  window.resetTimer = i => {
+    timers[i].elapsed = 0;
+    timers[i].running = false;
+    timers[i].completed = false;
+    save(); renderTimers();
   };
 
-  window.deleteTimer = (index) => {
-    timers.splice(index, 1);
-    renderTimers();
-    saveToFirebase();
+  window.deleteTimer = i => {
+    timers.splice(i,1);
+    save(); renderTimers();
   };
 
-  setInterval(() => {
-    let updated = false;
-    timers.forEach(t => {
-      if (t.running) {
+  setInterval(()=>{
+    let changed=false;
+    timers.forEach(t=>{
+      if(t.running){
         t.elapsed++;
-        updated = true;
-        if (t.elapsed >= t.target * 60 && !t.completed) t.completed = true;
+        if(t.elapsed>=t.target*60) t.completed=true;
+        changed=true;
       }
     });
-    if (updated) saveToFirebase();
+    if(changed) save();
     renderTimers();
-  }, 1000);
+  },1000);
 
   document.getElementById("startDayBtn").onclick = () => {
-    if (dayStarted) return alert("El día ya ha comenzado.");
-    dayNum++;
+    if (dayStarted) return alert("El día ya está iniciado.");
     dayStarted = new Date().toISOString();
-    alert(`Día iniciado: ${new Date(dayStarted).toLocaleString()}`);
-    saveToFirebase();
+    save();
   };
 
   document.getElementById("endDayBtn").onclick = () => {
-    if (!dayStarted) return alert("El día no ha comenzado aún.");
+    if (!dayStarted) return alert("Aún no iniciaste el día.");
     dayEnded = new Date().toISOString();
     timers.forEach(t => { t.running = false; t.elapsed = 0; t.completed = false; });
-    alert(`Día finalizado: ${new Date(dayEnded).toLocaleString()}`);
     dayStarted = null;
-    renderTimers();
-    saveToFirebase();
+    save(); renderTimers();
   };
 
-  document.getElementById("addTimerBtn").onclick = () => {
+  document.getElementById("addTimerBtn").onclick = () =>
     document.getElementById("formSection").classList.toggle("hidden");
-  };
 
   document.getElementById("createTimerBtn").onclick = () => {
-    const name = document.getElementById("activityName").value.trim();
-    const target = Number(document.getElementById("targetMinutes").value);
-    const note = document.getElementById("note").value.trim();
+    const n=document.getElementById("activityName").value.trim();
+    const t=Number(document.getElementById("targetMinutes").value);
+    const note=document.getElementById("note").value.trim();
 
-    if (!name || !target) return alert("Debes ingresar nombre y tiempo objetivo.");
-    timers.push({ name, target, note, elapsed: 0, running: false, completed: false });
-    document.getElementById("activityName").value = "";
-    document.getElementById("targetMinutes").value = "";
-    document.getElementById("note").value = "";
+    if(!n||!t) return alert("Nombre y minutos requeridos.");
+    timers.push({name:n,target:t,note,elapsed:0,running:false,completed:false});
+    document.getElementById("activityName").value="";
+    document.getElementById("targetMinutes").value="";
+    document.getElementById("note").value="";
     document.getElementById("formSection").classList.add("hidden");
-    renderTimers();
-    saveToFirebase();
+    save(); renderTimers();
   };
 
-  renderTimers();
 </script>
 </body>
 </html>
+
+
 
 
 
