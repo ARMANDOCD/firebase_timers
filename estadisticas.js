@@ -2,7 +2,7 @@
 // estadisticas.js
 // ====================================================
 
-import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
 
 // ---------------- CONFIG ----------------
@@ -31,9 +31,11 @@ function formatTime(totalSec){
 }
 
 // ---------------- MAIN ----------------
-const usuariosRef = ref(db, "usuarios");
+export async function renderStatsGeneral(){
+  statsContainer.innerHTML = "<p>Cargando estadísticas...</p>";
 
-onValue(usuariosRef, snapshot => {
+  const usuariosRef = ref(db, "usuarios");
+  const snapshot = await get(usuariosRef);
   const raw = snapshot.val() || {};
   const rows = [];
 
@@ -54,7 +56,8 @@ onValue(usuariosRef, snapshot => {
           });
         });
       });
-    } else if(cron.diaActual){
+    }
+    if(cron.diaActual){
       const dia = cron.diaActual;
       const day_start = dia.dayStarted;
       const day_end   = dia.dayEnded;
@@ -70,7 +73,6 @@ onValue(usuariosRef, snapshot => {
   });
 
   // ---------------- PROCESAMIENTO ----------------
-  // Convertir strings a fechas
   rows.forEach(r=>{
     r.dayStarted = r.dayStarted ? new Date(r.dayStarted) : null;
     r.dayEnded = r.dayEnded ? new Date(r.dayEnded) : null;
@@ -86,7 +88,6 @@ onValue(usuariosRef, snapshot => {
   // Días únicos y fechas únicas
   const dayIds = [...new Set(rows.map(r=>r.dayId))];
   const total_days = dayIds.length;
-
   const dateSet = new Set(rows.map(r=>r.createdAt?.toDateString()).filter(Boolean));
   const total_dates = dateSet.size;
 
@@ -101,7 +102,6 @@ onValue(usuariosRef, snapshot => {
     const remaining_min = target_min - total_min;
     const avg_activity_min = total_min/n_turnos;
     const success = total_min >= target_min;
-
     dayStats[d] = { total_sec, total_min, target_min, remaining_min, n_turnos, avg_activity_min, success };
   });
 
@@ -124,11 +124,10 @@ onValue(usuariosRef, snapshot => {
     const remaining_min = target_min - total_min;
     const avg_activity_min = total_min/n_turnos;
     const success = total_min >= target_min;
-
     dateStats[ds] = { total_sec, total_min, target_min, remaining_min, n_turnos, avg_activity_min, success };
   });
 
-  // Máxima racha
+  // Máxima racha por fecha
   const dateArray = Object.values(dateStats);
   let max_streak_f = 0, cur_streak_f = 0;
   dateArray.forEach(d=>{
@@ -158,5 +157,6 @@ onValue(usuariosRef, snapshot => {
       `).join("")}
     </div>
   `;
+}
 
-});
+
