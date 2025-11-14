@@ -283,7 +283,7 @@ function renderTimers(){
 
     div.innerHTML = `
       <h3>${t.name}</h3>
-      <p>Tiempo: <span>${formatTime(t.elapsed)}</span></p>
+      <p><span>${formatTime(t.elapsed)}</span></p>
       <p>Objetivo: ${t.target} min</p>      
       <p>Progreso específico: ${pctObj}%</p>
       <p>Progreso general: ${pctTotal}%</p>
@@ -374,6 +374,7 @@ window.showPage = (page) => alert(`Aquí se abriría la página de estadísticas
 </script>
 </body>
 </html>
+
 
 
 
