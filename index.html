@@ -309,8 +309,7 @@ window.openSection = function(sectionId){
 
  // ✅ Insertar renderizado de estadísticas
   if(sectionId === "statsGeneral"){
-    // Aquí llamamos a la función JS que procesará y mostrará stats
-    renderStatsGeneral();  
+    import("./estadisticas.js").then(mod => mod.renderStatsGeneral());
   }
 
   
@@ -537,6 +536,7 @@ document.getElementById("addTimerBtn").onclick = () =>
 
 </body>
 </html>
+
 
 
 
