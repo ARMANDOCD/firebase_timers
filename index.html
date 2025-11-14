@@ -305,6 +305,15 @@ window.openSection = function(sectionId){
   document.getElementById("statsPersonal").classList.add("hidden");
 
   document.getElementById(sectionId).classList.remove("hidden");
+
+
+ // ✅ Insertar renderizado de estadísticas
+  if(sectionId === "statsGeneral"){
+    // Aquí llamamos a la función JS que procesará y mostrará stats
+    renderStatsGeneral();  
+  }
+
+  
 };
 
 
@@ -528,6 +537,7 @@ document.getElementById("addTimerBtn").onclick = () =>
 
 </body>
 </html>
+
 
 
 
