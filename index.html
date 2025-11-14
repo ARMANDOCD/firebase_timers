@@ -105,7 +105,7 @@
 
 <h1>Gestor de Cronómetros</h1>
 
-<!-- 🔐 NUEVA SECCIÓN: LOGIN EMAIL/PASSWORD -->
+<!-- 🔐 LOGIN -->
 <div id="loginPanel">
   <h3>Acceso privado</h3>
   <input type="email" id="emailInput" placeholder="Correo autorizado">
@@ -169,8 +169,6 @@
   let dayStarted = null;
   let dayEnded = null;
 
-  const ALLOWED_EMAIL = "20160800armando@gmail.com"; // correo único
-
   // 📌 Login email/password
   document.getElementById("loginEmailBtn").onclick = async () => {
     const email = document.getElementById("emailInput").value;
@@ -179,15 +177,15 @@
     try {
       await signInWithEmailAndPassword(auth, email, pass);
     } catch (e) {
-      document.getElementById("loginError").textContent = "Credenciales incorrectas";
+      document.getElementById("loginError")..textContent = "Credenciales incorrectas";
     }
   };
 
   document.getElementById("logoutBtn").onclick = () => signOut(auth);
 
-  // 📌 Cambio de estado de autenticación
+  // 📌 Cambio de estado (sin validar correo en frontend)
   onAuthStateChanged(auth, user => {
-    if (user && user.email === ALLOWED_EMAIL) {
+    if (user) {
       document.getElementById("loginPanel").classList.add("hidden");
       document.getElementById("userSection").classList.remove("hidden");
       document.getElementById("mainControls").classList.remove("hidden");
@@ -314,6 +312,8 @@
 </script>
 </body>
 </html>
+
+
 
 
 
