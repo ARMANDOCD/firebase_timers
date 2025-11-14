@@ -183,15 +183,12 @@
 
   document.getElementById("logoutBtn").onclick = () => signOut(auth);
 
-  // 📌 Cambio de estado (sin validar correo en frontend)
   onAuthStateChanged(auth, user => {
     if (user) {
       document.getElementById("loginPanel").classList.add("hidden");
       document.getElementById("userSection").classList.remove("hidden");
       document.getElementById("mainControls").classList.remove("hidden");
-
       document.getElementById("userInfo").textContent = `Conectado como: ${user.email}`;
-
       dbRef = ref(db, `usuarios/${user.uid}/cronometros/diaActual`);
       listen();
     } else {
@@ -245,26 +242,29 @@
       `;
       container.appendChild(div);
     });
+    enableDragAndDrop(); // habilitar drag cada vez que renderizamos
   }
 
+  // 🔄 Funciones de control
   window.toggleTimer = i => {
     if (!dayStarted) return alert("Primero inicia el día.");
     timers[i].running = !timers[i].running;
-    save(); renderTimers();
+    renderTimers();
   };
 
   window.resetTimer = i => {
     timers[i].elapsed = 0;
     timers[i].running = false;
     timers[i].completed = false;
-    save(); renderTimers();
+    renderTimers();
   };
 
   window.deleteTimer = i => {
     timers.splice(i,1);
-    save(); renderTimers();
+    renderTimers();
   };
 
+  // ⏱ Intervalo de actualización local
   setInterval(()=>{
     let changed=false;
     timers.forEach(t=>{
@@ -274,10 +274,38 @@
         changed=true;
       }
     });
-    if(changed) save();
-    renderTimers();
+    if(changed) renderTimers();
   },1000);
 
+  // 💾 Guardado cada 5 segundos
+  setInterval(()=>{ save(); },5000);
+
+  // 🔹 Drag & Drop
+  let draggedIndex = null;
+  function enableDragAndDrop() {
+    const container = document.getElementById("timers-container");
+    const children = container.querySelectorAll(".timer");
+
+    children.forEach(child => {
+      child.ondragstart = e => {
+        draggedIndex = [...children].indexOf(e.target);
+      };
+
+      child.ondragover = e => e.preventDefault();
+
+      child.ondrop = e => {
+        const targetIndex = [...children].indexOf(e.target.closest(".timer"));
+        if (targetIndex === -1 || draggedIndex === null) return;
+        const moved = timers.splice(draggedIndex,1)[0];
+        timers.splice(targetIndex,0,moved);
+        draggedIndex = null;
+        save();
+        renderTimers();
+      };
+    });
+  }
+
+  // 🌅/🌇 Día y creación de timers
   document.getElementById("startDayBtn").onclick = () => {
     if (dayStarted) return alert("El día ya está iniciado.");
     dayStarted = new Date().toISOString();
@@ -299,7 +327,6 @@
     const n=document.getElementById("activityName").value.trim();
     const t=Number(document.getElementById("targetMinutes").value);
     const note=document.getElementById("note").value.trim();
-
     if(!n||!t) return alert("Nombre y minutos requeridos.");
     timers.push({name:n,target:t,note,elapsed:0,running:false,completed:false});
     document.getElementById("activityName").value="";
@@ -312,6 +339,8 @@
 </script>
 </body>
 </html>
+
+
 
 
 
