@@ -3,59 +3,35 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Gestor de Cronómetros</title>
+<title>Proyecto Armando</title>
 
 <style>
+
   body {
     font-family: 'Segoe UI', sans-serif;
     background: #dbdace;
-    color: #212121;
+    color: #a1a1a1;
     display: flex;
     flex-direction: column;
     align-items: center;
     padding: 20px;
   }
 
-  h1 { 
-    margin-bottom: 10px; 
-    color: #111;
-  }
+  h1 { margin-bottom: 10px; color: #1a1a1a; }
 
-  /* MENU LATERAL */
-  #menu {
-    position: fixed;
-    top: 10px;
-    right: 10px;
-    left: auto;
-    display: flex;
-    gap: 10px;
-  }
-
-  #menu button {
-    background: #0d3c91;
-    border: none;
-    color: #fff;
-    padding: 8px 14px;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: background 0.3s;
-  }
-
-  #menu button:hover {
-    background: #3b5fb3;
-  }
+  .controls { margin-bottom: 20px; }
 
   button {
-    background: #0d3c91;
+    background: #3b5dd1;
     border: none;
-    color: #fff;
+    color: #f1f1f1;
     padding: 8px 14px;
     margin: 4px;
     border-radius: 6px;
     cursor: pointer;
     transition: background 0.3s;
   }
-  button:hover { background: #3b5fb3; }
+  button:hover { background: #5a7be0; }
 
   #timers-container {
     display: grid;
@@ -66,14 +42,13 @@
   }
 
   .timer {
-    background: #0d3c91;
+    background: #1a2f7a;
     border: 1px solid #333;
     border-radius: 10px;
     padding: 10px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    color: white;
   }
 
   .timer.completed {
@@ -81,20 +56,21 @@
     border-color: #1d7a1d;
   }
 
-  .timer h3 { margin: 5px 0; }
-  .timer p { margin: 2px 0; }
-
-  /* TIEMPO MÁS GRANDE */
   .timer p span {
-    font-size: 1.7rem;
+    font-size: 2rem;
     font-weight: bold;
     color: #fff;
   }
+
+  .timer h3 { margin: 5px 0; }
+  .timer p { margin: 2px 0; }
 
   .timer .buttons {
     display: flex;
     gap: 6px;
   }
+
+  .draggable { cursor: move; }
 
   .input-group {
     display: flex;
@@ -114,13 +90,16 @@
 
   textarea { resize: vertical; }
 
+  .hidden { display: none !important; }
+
+  #userSection { margin-bottom: 20px; text-align: center; }
+
   #loginPanel {
     background: #1c1c1c;
     padding: 20px;
     border-radius: 10px;
     border: 1px solid #333;
     text-align: center;
-    color: white;
   }
 
   #loginPanel input {
@@ -128,18 +107,20 @@
     margin: 5px 0;
   }
 
-  .hidden { display: none; }
-
-  /* Páginas internas */
-  .page {
-    display: none;
-    width: 90%;
-    max-width: 900px;
-    margin-top: 20px;
+  /* ✅ CAMBIO 1: menú alineado a la derecha */
+  #menu {
+    position: fixed;
+    top: 10px;
+    right: 10px;  /* <--- AQUI */
+    left: auto;   /* <--- AQUI */
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
   }
 
-  .page.active {
-    display: block;
+  #dayInfo {
+    margin-bottom: 20px;
+    text-align: center;
   }
 
 </style>
@@ -147,230 +128,406 @@
 
 <body>
 
+<h1>Proyecto Armando</h1>
+
+<!-- 🔵 MENU SUPERIOR -->
 <div id="menu">
-  <button onclick="openPage('timersPage')">⏱️ Cronómetros</button>
-  <button onclick="openPage('statsGeneral')">📊 Estadísticas Generales</button>
-  <button onclick="openPage('statsPersonal')">📈 Estadísticas Personales</button>
+  <button onclick="openSection('mainPage')">🏠 Cronómetros</button>
+  <button onclick="openSection('statsGeneral')">📊 Estadísticas Generales</button>
+  <button onclick="openSection('statsPersonal')">👤 Estadísticas Individuales</button>
 </div>
 
-<h1>Gestor de Cronómetros</h1>
 
-<!-- LOGIN -->
-<div id="loginPanel">
-  <h2>Iniciar Sesión</h2>
-  <input id="email" type="email" placeholder="Correo"><br>
-  <input id="password" type="password" placeholder="Contraseña"><br>
-  <button onclick="login()">Ingresar</button>
-</div>
+<!-- 🔵 SECCIÓN PRINCIPAL -->
+<section id="mainPage">
 
-<!-- PÁGINA PRINCIPAL -->
-<div id="timersPage" class="page">
+  <div id="dayInfo" class="hidden"></div>
 
-  <div class="controls">
-    <button onclick="addTimer()">➕ Añadir cronómetro</button>
-    <button onclick="resetAll()">🔄 Reiniciar todos</button>
+  <!-- LOGIN -->
+  <div id="loginPanel">
+    <h3>Acceso privado</h3>
+    <input type="email" id="emailInput" placeholder="Correo autorizado">
+    <input type="password" id="passwordInput" placeholder="Contraseña">
+    <button id="loginEmailBtn">Ingresar</button>
+    <p id="loginError" style="color:#ff5555;"></p>
+  </div>
+
+  <!-- Info de usuario -->
+  <div id="userSection" class="hidden">
+    <p id="userInfo"></p>
+    <button id="logoutBtn">Cerrar sesión</button>
+  </div>
+
+  <div class="controls hidden" id="mainControls">
+    <button id="startDayBtn">🌅 Iniciar Día</button>
+    <button id="endDayBtn">🌇 Finalizar Día</button>
+    <button id="addTimerBtn">➕ Nuevo Cronómetro</button>
+  </div>
+
+  <div id="formSection" class="hidden">
+    <div class="input-group">
+      <input type="text" id="activityName" placeholder="Nombre de la actividad">
+      <input type="number" id="targetMinutes" placeholder="Minutos objetivo" min="1">
+    </div>
+
+    <div class="input-group">
+      <textarea id="note" placeholder="Nota (opcional)"></textarea>
+    </div>
+
+    <button id="createTimerBtn">Crear</button>
   </div>
 
   <div id="timers-container"></div>
-</div>
 
-<!-- PÁGINA: ESTADÍSTICAS GENERALES -->
-<div id="statsGeneral" class="page">
-  <h2>Estadísticas Generales</h2>
-  <div id="statsGeneralEmbed">
-    <!-- Aquí se inserta automáticamente el iframe -->
-  </div>
-</div>
+</section>
 
-<!-- PÁGINA: ESTADÍSTICAS PERSONALES -->
-<div id="statsPersonal" class="page">
-  <h2>Estadísticas Personales</h2>
-  <div id="statsPersonalEmbed">
-    <!-- Aquí va el segundo iframe -->
-  </div>
-</div>
 
-<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database.js"></script>
+<!-- 🔵 ESTADÍSTICAS GENERALES -->
+<section id="statsGeneral" class="hidden">
+  <h2>📊 Estadísticas Generales</h2>
+  <div id="statsGeneralEmbed"></div>
+</section>
 
-<script>
-  /* -------------------------------
-        CONFIGURAR FIREBASE AQUÍ
-  -------------------------------- */
-  const firebaseConfig = {
-    apiKey: "TU_API_KEY",
-    authDomain: "TU_AUTH_DOMAIN",
-    databaseURL: "TU_DATABASE_URL",
-    projectId: "TU_PROJECT",
-    storageBucket: "TU_BUCKET",
-    messagingSenderId: "TU_MSG",
-    appId: "TU_APP_ID"
-  };
+<!-- 🔵 ESTADÍSTICAS INDIVIDUALES -->
+<section id="statsPersonal" class="hidden">
+  <h2>👤 Estadísticas Individuales</h2>
+  <div id="statsPersonalEmbed"></div>
+</section>
 
-  firebase.initializeApp(firebaseConfig);
-  const auth = firebase.auth();
-  const db   = firebase.database();
 
-  let timers = [];
-  let uid = null;
 
-  /* ------------------------
-       CAMBIO DE PÁGINAS
-  ------------------------- */
-  function openPage(id) {
-    document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
-    document.getElementById(id).classList.add("active");
+<!-- 🔵 SCRIPT -->
+<script type="module">
+
+/* --- TU FIREBASE ORIGINAL SIN CAMBIOS --- */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCby9oxzPzBDllkzuW21ZoGNJh67UgYZ8E",
+  authDomain: "notion-timers-2a3bb.firebaseapp.com",
+  databaseURL: "https://notion-timers-2a3bb-default-rtdb.firebaseio.com",
+  projectId: "notion-timers-2a3bb",
+  storageBucket: "notion-timers-2a3bb.firebasestorage.app",
+  messagingSenderId: "78500747038",
+  appId: "1:78500747038:web:2b5fdec3731a203c7f1b0f"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const auth = getAuth(app);
+
+
+
+/* -------- LOGIN -------- */
+
+document.getElementById("loginEmailBtn").onclick = async () => {
+  const email = document.getElementById("emailInput").value;
+  const pass = document.getElementById("passwordInput").value;
+
+  try {
+    await signInWithEmailAndPassword(auth, email, pass);
+  } catch(e){
+    document.getElementById("loginError").textContent="Credenciales incorrectas";
   }
+};
 
-  /* ------------------------
-       LOGIN
-  ------------------------- */
-  function login() {
-    const email = emailInput.value;
-    const pass = password.value;
+document.getElementById("logoutBtn").onclick = () => signOut(auth);
 
-    auth.signInWithEmailAndPassword(email, pass).then(res => {
-      uid = res.user.uid;
+let dbRef;
+let timers = [];
+let dayStarted = null;
+let dayEnded = null;
 
-      loginPanel.classList.add("hidden");
-      openPage("timersPage");
 
-      load();
-      insertColabEmbeds();
-    }).catch(err => {
-      alert("Error: " + err.message);
-    });
-  }
+onAuthStateChanged(auth, user => {
+  if(user){
 
-  /* ------------------------
-       CRUD DE CRONÓMETROS
-  ------------------------- */
-  function addTimer() {
-    const name = prompt("Nombre del cronómetro:");
-    if (!name) return;
-    const target = Number(prompt("Objetivo en minutos:"));
-    if (!target || target < 1) return;
+    document.getElementById("loginPanel").classList.add("hidden");
+    document.getElementById("userSection").classList.remove("hidden");
+    document.getElementById("mainControls").classList.remove("hidden");
 
-    timers.push({ name, target, elapsed: 0, running: false });
-    save();
+    document.getElementById("userInfo").textContent = `Conectado como: ${user.email}`;
+
+    dbRef = ref(db, `usuarios/${user.uid}/cronometros/diaActual`);
+    listen();
+
+  } else {
+
+    document.getElementById("loginPanel").classList.remove("hidden");
+    document.getElementById("userSection").classList.add("hidden");
+    document.getElementById("mainControls").classList.add("hidden");
+
+    timers = [];
     renderTimers();
   }
+});
 
-  function renderTimers() {
-    const cont = document.getElementById("timers-container");
-    cont.innerHTML = "";
 
-    timers.forEach((t, i) => {
-      const div = document.createElement("div");
-      div.className = "timer" + (t.elapsed >= t.target * 60000 ? " completed" : "");
-      div.innerHTML = `
-        <h3>${t.name}</h3>
-        <p>Objetivo: ${t.target} min</p>
-        <p>Tiempo: <span>${formatTime(t.elapsed)}</span></p>
 
-        <div class="buttons">
-          <button onclick="toggleTimer(${i})">▶️ / ⏸️</button>
-          <button onclick="resetTimer(${i})">🔄</button>
-          <button onclick="deleteTimer(${i})">🗑️</button>
-          <button onclick="editTimer(${i})">✏️ Editar</button>
-        </div>
-      `;
-      cont.appendChild(div);
-    });
-  }
-
-  window.editTimer = i => {
-    const newTarget = prompt("Nuevo objetivo en minutos:", timers[i].target);
-    if (!newTarget || isNaN(newTarget) || newTarget <= 0) return;
-    timers[i].target = Number(newTarget);
-    save();
+/* -------- CARGA DE DATOS -------- */
+function listen() {
+  onValue(dbRef, snap => {
+    const data = snap.val() || {};
+    timers = data.timers || [];
+    dayStarted = data.dayStarted || null;
+    dayEnded = data.dayEnded || null;
     renderTimers();
-  };
+  });
+}
 
-  function toggleTimer(i) {
-    timers[i].running = !timers[i].running;
-    save();
+function save() {
+  if(!dbRef) return;
+  set(dbRef,{
+    timers,
+    dayStarted,
+    dayEnded,
+    updatedAt:new Date().toISOString()
+  });
+}
+
+
+
+function formatTime(s){
+  const h = String(Math.floor(s/3600)).padStart(2,"0");
+  const m = String(Math.floor((s%3600)/60)).padStart(2,"0");
+  const s2 = String(s%60).padStart(2,"0");
+  return `${h}:${m}:${s2}`;
+}
+
+
+
+/* -------- NAV SECTIONS -------- */
+window.openSection = function(sectionId){
+  document.getElementById("mainPage").classList.add("hidden");
+  document.getElementById("statsGeneral").classList.add("hidden");
+  document.getElementById("statsPersonal").classList.add("hidden");
+
+  document.getElementById(sectionId).classList.remove("hidden");
+};
+
+
+
+
+/* -------- CREAR CRONÓMETRO -------- */
+document.getElementById("createTimerBtn").onclick = () => {
+
+  const n = document.getElementById("activityName").value.trim();
+  const t = Number(document.getElementById("targetMinutes").value);
+  const note = document.getElementById("note").value.trim();
+
+  if(!n || !t) return alert("Nombre y minutos requeridos.");
+
+  const createdAt = new Date().toISOString();
+
+  timers.push({
+    name: n,
+    target: t,
+    note,
+    elapsed: 0,
+    running: false,
+    completed: false,
+    createdAt
+  });
+
+  document.getElementById("activityName").value="";
+  document.getElementById("targetMinutes").value="";
+  document.getElementById("note").value="";
+  document.getElementById("formSection").classList.add("hidden");
+
+  save();
+  renderTimers();
+};
+
+
+
+/* -------- RENDER -------- */
+function renderTimers(){
+
+  const container = document.getElementById("timers-container");
+  container.innerHTML="";
+
+  const totalTargetSeconds = timers.reduce((sum,t)=>sum+t.target*60,0);
+  const totalElapsedSeconds = timers.reduce((sum,t)=>sum+t.elapsed,0);
+
+  const dayInfoDiv = document.getElementById("dayInfo");
+
+  if(dayStarted){
+
+    const start = new Date(dayStarted);
+    const estimatedEnd = new Date(start.getTime() + totalTargetSeconds*1000);
+    const progress = totalElapsedSeconds / totalTargetSeconds * 100 || 0;
+
+    dayInfoDiv.innerHTML = `
+      <p>Día iniciado: ${start.toLocaleString()}</p>
+      <p>Hora estimada de fin: ${estimatedEnd.toLocaleString()}</p>
+      <p>Progreso total: ${progress.toFixed(1)}%</p>
+    `;
+
+    dayInfoDiv.classList.remove("hidden");
+
+  } else {
+    dayInfoDiv.classList.add("hidden");
   }
 
-  function resetTimer(i) {
-    timers[i].elapsed = 0;
-    timers[i].running = false;
-    save();
-    renderTimers();
-  }
 
-  function deleteTimer(i) {
-    if (confirm("¿Eliminar este cronómetro?")) {
-      timers.splice(i, 1);
+
+  timers.forEach((t,i)=>{
+
+    const div = document.createElement("div");
+    div.className = "timer draggable" + (t.completed ? " completed" : "");
+    div.draggable = true;
+
+    const pctObj = (t.elapsed/(t.target*60)*100).toFixed(1);
+    const pctTotal = (t.elapsed/totalTargetSeconds*100).toFixed(1);
+
+    div.innerHTML = `
+      <h3>${t.name}</h3>
+      <p><span>${formatTime(t.elapsed)}</span></p>
+      <p>Objetivo: ${t.target} min</p>
+      <p>Progreso específico: ${pctObj}%</p>
+      <p>Progreso general: ${pctTotal}%</p>
+      <p>Creado: ${new Date(t.createdAt).toLocaleString()}</p>
+      ${t.note ? `<p><i>${t.note}</i></p>` : ""}
+      <div class="buttons">
+        <button onclick="toggleTimer(${i})">${t.running?"⏸️ Pausa":"▶️ Iniciar"}</button>
+        <button onclick="resetTimer(${i})">🔄 Reset</button>
+        <button onclick="deleteTimer(${i})">🗑️ Borrar</button>
+
+        <!-- ✅ CAMBIO 2: BOTÓN EDITAR -->
+        <button onclick="editTimer(${i})">✏️ Editar</button>
+
+      </div>
+    `;
+
+    container.appendChild(div);
+  });
+
+  enableDragAndDrop();
+}
+
+
+
+/* ---------- 🔵 NUEVA FUNCIÓN EDITAR ----------- */
+window.editTimer = i => {
+  const newTarget = prompt("Nuevo objetivo en minutos:", timers[i].target);
+  if (!newTarget || isNaN(newTarget) || newTarget <= 0) return;
+
+  timers[i].target = Number(newTarget);
+  timers[i].completed = false;
+  save();
+  renderTimers();
+};
+
+
+
+/* -------- TIMERS -------- */
+
+window.toggleTimer = i => {
+  if(!dayStarted) return alert("Primero inicia el día.");
+  timers[i].running = !timers[i].running;
+  renderTimers();
+};
+
+window.resetTimer = i => {
+  timers[i].elapsed=0;
+  timers[i].running=false;
+  timers[i].completed=false;
+  renderTimers();
+};
+
+window.deleteTimer = i => {
+  timers.splice(i,1);
+  renderTimers();
+};
+
+
+setInterval(()=>{
+  let changed=false;
+  timers.forEach(t=>{
+    if(t.running){
+      t.elapsed++;
+      if(t.elapsed>=t.target*60){
+        t.completed=true;
+      }
+      changed=true;
+    }
+  });
+  if(changed) renderTimers();
+},1000);
+
+
+setInterval(()=>save(),5000);
+
+
+
+/* -------- DRAG & DROP -------- */
+
+let draggedIndex=null;
+
+function enableDragAndDrop(){
+  const container = document.getElementById("timers-container");
+  const children = container.querySelectorAll(".timer");
+
+  children.forEach(child=>{
+    child.ondragstart = e => {
+      draggedIndex = [...children].indexOf(e.target);
+    };
+
+    child.ondragover = e => e.preventDefault();
+
+    child.ondrop = e => {
+      const targetIndex = [...children].indexOf(e.target.closest(".timer"));
+      if(targetIndex === -1 || draggedIndex === null) return;
+
+      const moved = timers.splice(draggedIndex,1)[0];
+      timers.splice(targetIndex,0,moved);
+
+      draggedIndex=null;
       save();
       renderTimers();
-    }
-  }
+    };
+  });
+}
 
-  function resetAll() {
-    if (!confirm("¿Reiniciar todos los cronómetros?")) return;
-    timers.forEach(t => t.elapsed = 0);
-    save();
-    renderTimers();
-  }
 
-  function formatTime(ms) {
-    const m = Math.floor(ms / 60000);
-    const s = Math.floor((ms % 60000) / 1000);
-    return m + ":" + (s < 10 ? "0" : "") + s;
-  }
 
-  /* ------------------------
-        LOOP DEL CRONÓMETRO
-  ------------------------- */
-  setInterval(() => {
-    timers.forEach(t => {
-      if (t.running) t.elapsed += 1000;
-    });
-    saveLocal();
-    renderTimers();
-  }, 1000);
+/* -------- DÍA -------- */
 
-  /* ------------------------
-       CARGA Y GUARDADO
-  ------------------------- */
-  function save() {
-    if (!uid) return;
-    db.ref("usuarios/" + uid + "/cronometros").set(timers);
-    saveLocal();
-  }
+document.getElementById("startDayBtn").onclick = () => {
+  if(dayStarted) return alert("El día ya está iniciado.");
+  dayStarted = new Date().toISOString();
+  save();
+  renderTimers();
+};
 
-  function saveLocal() {
-    localStorage.setItem("timers", JSON.stringify(timers));
-  }
+document.getElementById("endDayBtn").onclick = () => {
+  if(!dayStarted) return alert("Aún no iniciaste el día.");
+  dayEnded = new Date().toISOString();
 
-  function load() {
-    db.ref("usuarios/" + uid + "/cronometros").once("value").then(snap => {
-      timers = snap.val() || [];
-      renderTimers();
-    });
-  }
+  timers.forEach(t=>{
+    t.running=false;
+    t.elapsed=0;
+    t.completed=false;
+  });
 
-  /* ------------------------
-       EMBED DE COLAB
-  ------------------------- */
-  function insertColabEmbeds() {
-    document.getElementById("statsGeneralEmbed").innerHTML = `
-      <iframe src="TU_URL_COLAB_GENERAL"
-              width="100%" height="600px" style="border:none;"></iframe>
-    `;
+  dayStarted = null;
 
-    document.getElementById("statsPersonalEmbed").innerHTML = `
-      <iframe src="TU_URL_COLAB_PERSONAL"
-              width="100%" height="600px" style="border:none;"></iframe>
-    `;
-  }
+  save();
+  renderTimers();
+};
+
+
+document.getElementById("addTimerBtn").onclick = () =>
+  document.getElementById("formSection").classList.toggle("hidden");
 
 </script>
 
 </body>
 </html>
+
+
 
 
 
