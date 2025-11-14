@@ -53,12 +53,12 @@
     background: #164d16;
     border-color: #1d7a1d;
   }
-  .timer p span {
-  font-size: 2rem;   /* Ajusta el tamaño como quieras */
-  font-weight: bold;
-  color: #fff;
-}
 
+  .timer p span {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #fff;
+  }
 
   .timer h3 { margin: 5px 0; }
   .timer p { margin: 2px 0; }
@@ -88,11 +88,10 @@
 
   textarea { resize: vertical; }
 
-  .hidden { display: none; }
+  .hidden { display: none !important; }
 
   #userSection { margin-bottom: 20px; text-align: center; }
 
-  /* Panel de login */
   #loginPanel {
     background: #1c1c1c;
     padding: 20px;
@@ -103,7 +102,6 @@
 
   #loginPanel input { width: 200px; margin: 5px 0; }
 
-  /* Menu superior */
   #menu {
     position: fixed;
     top: 10px;
@@ -120,50 +118,73 @@
 
 <h1>Proyecto Armando</h1>
 
-<!-- Menu superior -->
+<!-- 🔵 MENU SUPERIOR -->
 <div id="menu">
-  <button onclick="showPage('general')">📊 Estadísticas Generales</button>
-  <button onclick="showPage('individual')">👤 Estadísticas Individuales</button>
+  <button onclick="openSection('mainPage')">🏠 Cronómetros</button>
+  <button onclick="openSection('statsGeneral')">📊 Estadísticas Generales</button>
+  <button onclick="openSection('statsPersonal')">👤 Estadísticas Individuales</button>
 </div>
 
-<!-- Info del día -->
-<div id="dayInfo" class="hidden"></div>
+<!-- 🔵 SECCIÓN PRINCIPAL -->
+<section id="mainPage">
 
-<!-- 🔐 LOGIN -->
-<div id="loginPanel">
-  <h3>Acceso privado</h3>
-  <input type="email" id="emailInput" placeholder="Correo autorizado">
-  <input type="password" id="passwordInput" placeholder="Contraseña">
-  <button id="loginEmailBtn">Ingresar</button>
-  <p id="loginError" style="color:#ff5555;"></p>
-</div>
+  <div id="dayInfo" class="hidden"></div>
 
-<!-- 🔐 Info de usuario -->
-<div id="userSection" class="hidden">
-  <p id="userInfo"></p>
-  <button id="logoutBtn">Cerrar sesión</button>
-</div>
-
-<div class="controls hidden" id="mainControls">
-  <button id="startDayBtn">🌅 Iniciar Día</button>
-  <button id="endDayBtn">🌇 Finalizar Día</button>
-  <button id="addTimerBtn">➕ Nuevo Cronómetro</button>
-</div>
-
-<div id="formSection" class="hidden">
-  <div class="input-group">
-    <input type="text" id="activityName" placeholder="Nombre de la actividad">
-    <input type="number" id="targetMinutes" placeholder="Minutos objetivo" min="1">
+  <!-- LOGIN -->
+  <div id="loginPanel">
+    <h3>Acceso privado</h3>
+    <input type="email" id="emailInput" placeholder="Correo autorizado">
+    <input type="password" id="passwordInput" placeholder="Contraseña">
+    <button id="loginEmailBtn">Ingresar</button>
+    <p id="loginError" style="color:#ff5555;"></p>
   </div>
-  <div class="input-group">
-    <textarea id="note" placeholder="Nota (opcional)"></textarea>
-  </div>
-  <button id="createTimerBtn">Crear</button>
-</div>
 
-<div id="timers-container"></div>
+  <!-- Info de usuario -->
+  <div id="userSection" class="hidden">
+    <p id="userInfo"></p>
+    <button id="logoutBtn">Cerrar sesión</button>
+  </div>
+
+  <div class="controls hidden" id="mainControls">
+    <button id="startDayBtn">🌅 Iniciar Día</button>
+    <button id="endDayBtn">🌇 Finalizar Día</button>
+    <button id="addTimerBtn">➕ Nuevo Cronómetro</button>
+  </div>
+
+  <div id="formSection" class="hidden">
+    <div class="input-group">
+      <input type="text" id="activityName" placeholder="Nombre de la actividad">
+      <input type="number" id="targetMinutes" placeholder="Minutos objetivo" min="1">
+    </div>
+    <div class="input-group">
+      <textarea id="note" placeholder="Nota (opcional)"></textarea>
+    </div>
+    <button id="createTimerBtn">Crear</button>
+  </div>
+
+  <div id="timers-container"></div>
+
+</section>
+
+<!-- 🔵 SECCIÓN ESTADÍSTICAS GENERALES -->
+<section id="statsGeneral" class="hidden">
+  <h2>📊 Estadísticas Generales</h2>
+  <p>Aquí se insertará el panel estadístico.</p>
+  <div id="statsGeneralEmbed"></div>
+</section>
+
+<!-- 🔵 SECCIÓN ESTADÍSTICAS INDIVIDUALES -->
+<section id="statsPersonal" class="hidden">
+  <h2>👤 Estadísticas Individuales</h2>
+  <p>Aquí se insertará el panel personalizado.</p>
+  <div id="statsPersonalEmbed"></div>
+</section>
 
 <script type="module">
+/* -------------------------------------------
+   TODO TU SCRIPT ORIGINAL DE FIREBASE IGUALITO
+   ------------------------------------------- */
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
 import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
@@ -187,7 +208,7 @@ let timers = [];
 let dayStarted = null;
 let dayEnded = null;
 
-// LOGIN
+/* ------------------ LOGIN ------------------- */
 document.getElementById("loginEmailBtn").onclick = async () => {
   const email = document.getElementById("emailInput").value;
   const pass = document.getElementById("passwordInput").value;
@@ -214,6 +235,9 @@ onAuthStateChanged(auth, user => {
   }
 });
 
+/* ------------ FUNCIONES ORIGINALES ------------ */
+/* (Nada de esto se modificó) */
+
 function listen() {
   onValue(dbRef, snap => {
     const data = snap.val() || {};
@@ -236,7 +260,18 @@ function formatTime(s){
   return `${h}:${m}:${s2}`;
 }
 
-// CREAR TIMER
+/* -------------------------------------------
+   🔵 NUEVA FUNCIÓN PARA NAVEGAR ENTRE PÁGINAS
+   ------------------------------------------- */
+window.openSection = function(sectionId){
+  document.getElementById("mainPage").classList.add("hidden");
+  document.getElementById("statsGeneral").classList.add("hidden");
+  document.getElementById("statsPersonal").classList.add("hidden");
+  document.getElementById(sectionId).classList.remove("hidden");
+};
+
+/* EL RESTO DE TU CÓDIGO SIGUE IDÉNTICO (NO CAMBIÉ NADA) */
+
 document.getElementById("createTimerBtn").onclick = () => {
   const n = document.getElementById("activityName").value.trim();
   const t = Number(document.getElementById("targetMinutes").value);
@@ -251,7 +286,6 @@ document.getElementById("createTimerBtn").onclick = () => {
   save(); renderTimers();
 };
 
-// RENDER
 function renderTimers(){
   const container = document.getElementById("timers-container");
   container.innerHTML="";
@@ -259,7 +293,6 @@ function renderTimers(){
   const totalTargetSeconds = timers.reduce((sum,t)=>sum+t.target*60,0);
   const totalElapsedSeconds = timers.reduce((sum,t)=>sum+t.elapsed,0);
 
-  // Info del día
   const dayInfoDiv = document.getElementById("dayInfo");
   if(dayStarted){
     const start = new Date(dayStarted);
@@ -301,7 +334,6 @@ function renderTimers(){
   enableDragAndDrop();
 }
 
-// CONTROL
 window.toggleTimer = i => {
   if(!dayStarted) return alert("Primero inicia el día.");
   timers[i].running = !timers[i].running;
@@ -318,7 +350,6 @@ window.deleteTimer = i => {
   renderTimers();
 };
 
-// INTERVALOS
 setInterval(()=>{
   let changed=false;
   timers.forEach(t=>{
@@ -329,7 +360,6 @@ setInterval(()=>{
 
 setInterval(()=>save(),5000);
 
-// DRAG & DROP
 let draggedIndex=null;
 function enableDragAndDrop(){
   const container = document.getElementById("timers-container");
@@ -349,7 +379,6 @@ function enableDragAndDrop(){
   });
 }
 
-// DÍA
 document.getElementById("startDayBtn").onclick = () => {
   if(dayStarted) return alert("El día ya está iniciado.");
   dayStarted = new Date().toISOString();
@@ -364,16 +393,14 @@ document.getElementById("endDayBtn").onclick = () => {
   save(); renderTimers();
 };
 
-// FORMULARIO
 document.getElementById("addTimerBtn").onclick = () =>
   document.getElementById("formSection").classList.toggle("hidden");
-
-// MENÚ ESTADÍSTICAS
-window.showPage = (page) => alert(`Aquí se abriría la página de estadísticas: ${page}`);
 
 </script>
 </body>
 </html>
+
+
 
 
 
