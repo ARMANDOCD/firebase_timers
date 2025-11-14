@@ -53,6 +53,12 @@
     background: #164d16;
     border-color: #1d7a1d;
   }
+  .timer p span {
+  font-size: 2rem;   /* Ajusta el tamaño como quieras */
+  font-weight: bold;
+  color: #fff;
+}
+
 
   .timer h3 { margin: 5px 0; }
   .timer p { margin: 2px 0; }
@@ -277,9 +283,10 @@ function renderTimers(){
 
     div.innerHTML = `
       <h3>${t.name}</h3>
-      <p>Objetivo: ${t.target} min</p>
       <p>Tiempo: <span>${formatTime(t.elapsed)}</span></p>
-      <p>Progreso: ${pctObj}% (sobre objetivo), ${pctTotal}% (sobre total)</p>
+      <p>Objetivo: ${t.target} min</p>      
+      <p>Progreso específico: ${pctObj}%</p>
+      <p>Progreso general: ${pctTotal}%</p>
       <p>Creado: ${new Date(t.createdAt).toLocaleString()}</p>
       ${t.note?`<p><i>${t.note}</i></p>`:""}
       <div class="buttons">
@@ -367,6 +374,7 @@ window.showPage = (page) => alert(`Aquí se abriría la página de estadísticas
 </script>
 </body>
 </html>
+
 
 
 
