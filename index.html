@@ -199,10 +199,21 @@
 <!-- 🔵 SCRIPT -->
 <script type="module">
 
-/* --- TU FIREBASE ORIGINAL SIN CAMBIOS --- */
+/* --- FIREBASE (modular v11) --- */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+import {
+  getDatabase,
+  ref,
+  set,
+  onValue,
+  push
+} from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCby9oxzPzBDllkzuW21ZoGNJh67UgYZ8E",
@@ -219,7 +230,6 @@ const db = getDatabase(app);
 const auth = getAuth(app);
 
 
-
 /* -------- LOGIN -------- */
 
 document.getElementById("loginEmailBtn").onclick = async () => {
@@ -230,6 +240,7 @@ document.getElementById("loginEmailBtn").onclick = async () => {
     await signInWithEmailAndPassword(auth, email, pass);
   } catch(e){
     document.getElementById("loginError").textContent="Credenciales incorrectas";
+    console.error(e);
   }
 };
 
@@ -239,10 +250,15 @@ let dbRef;
 let timers = [];
 let dayStarted = null;
 let dayEnded = null;
+let currentUid = null;
+
+// Para asegurar que "timer completado" solo se loguea una vez por timer por sesión:
+const loggedCompletions = new Set();
 
 
 onAuthStateChanged(auth, user => {
   if(user){
+    currentUid = user.uid;
 
     document.getElementById("loginPanel").classList.add("hidden");
     document.getElementById("userSection").classList.remove("hidden");
@@ -250,10 +266,14 @@ onAuthStateChanged(auth, user => {
 
     document.getElementById("userInfo").textContent = `Conectado como: ${user.email}`;
 
+    // referencia al diaActual (tu estructura real)
     dbRef = ref(db, `usuarios/${user.uid}/cronometros/diaActual`);
     listen();
 
   } else {
+
+    currentUid = null;
+    dbRef = null;
 
     document.getElementById("loginPanel").classList.remove("hidden");
     document.getElementById("userSection").classList.add("hidden");
@@ -265,7 +285,6 @@ onAuthStateChanged(auth, user => {
 });
 
 
-
 /* -------- CARGA DE DATOS -------- */
 function listen() {
   onValue(dbRef, snap => {
@@ -273,29 +292,54 @@ function listen() {
     timers = data.timers || [];
     dayStarted = data.dayStarted || null;
     dayEnded = data.dayEnded || null;
+    // Resetear loggedCompletions si cambiaste de día (evita duplicados en sesión nueva)
+    loggedCompletions.clear();
     renderTimers();
   });
 }
 
-function save() {
+async function save() {
   if(!dbRef) return;
-  set(dbRef,{
-    timers,
-    dayStarted,
-    dayEnded,
-    updatedAt:new Date().toISOString()
-  });
+  try {
+    await set(dbRef,{
+      timers,
+      dayStarted,
+      dayEnded,
+      updatedAt:new Date().toISOString()
+    });
+  } catch(err) {
+    console.error("Error guardando diaActual:", err);
+  }
 }
 
 
+/* -------- FUNCIÓN DE LOG DE EVENTOS (historial) -------- */
+async function logEvento(uid, tipo, dataExtra = {}) {
+  if(!uid) return;
+  try {
+    const eventosRef = ref(db, `usuarios/${uid}/historialEventos`);
+    const evento = {
+      timestamp: new Date().toISOString(),
+      tipo,
+      usuario: uid,
+      ...dataExtra
+    };
+    const newRef = push(eventosRef);
+    await set(newRef, evento);
+    // no bloqueamos la UI; si quieres usar el resultado, haz await desde el caller
+  } catch (e) {
+    console.error("Error logeando evento:", e, tipo, dataExtra);
+  }
+}
 
+
+/* -------- UTILIDADES -------- */
 function formatTime(s){
   const h = String(Math.floor(s/3600)).padStart(2,"0");
   const m = String(Math.floor((s%3600)/60)).padStart(2,"0");
   const s2 = String(s%60).padStart(2,"0");
   return `${h}:${m}:${s2}`;
 }
-
 
 
 /* -------- NAV SECTIONS -------- */
@@ -306,30 +350,24 @@ window.openSection = function(sectionId){
 
   document.getElementById(sectionId).classList.remove("hidden");
 
-
- // ✅ Insertar renderizado de estadísticas
   if(sectionId === "statsGeneral"){
     import("./estadisticas.js").then(mod => mod.renderStatsGeneral());
   }
-
-  
 };
 
 
-
-
 /* -------- CREAR CRONÓMETRO -------- */
-document.getElementById("createTimerBtn").onclick = () => {
-
+document.getElementById("createTimerBtn").onclick = async () => {
   const n = document.getElementById("activityName").value.trim();
   const t = Number(document.getElementById("targetMinutes").value);
   const note = document.getElementById("note").value.trim();
 
   if(!n || !t) return alert("Nombre y minutos requeridos.");
 
+  // usamos createdAt ISO como timerId único
   const createdAt = new Date().toISOString();
 
-  timers.push({
+  const newTimer = {
     name: n,
     target: t,
     note,
@@ -337,17 +375,27 @@ document.getElementById("createTimerBtn").onclick = () => {
     running: false,
     completed: false,
     createdAt
-  });
+  };
+
+  timers.push(newTimer);
 
   document.getElementById("activityName").value="";
   document.getElementById("targetMinutes").value="";
   document.getElementById("note").value="";
   document.getElementById("formSection").classList.add("hidden");
 
-  save();
+  await save();
+
+  // Log evento: timer creado
+  logEvento(currentUid, "timer_creado", {
+    timerId: createdAt,
+    name: n,
+    target: t,
+    note
+  });
+
   renderTimers();
 };
-
 
 
 /* -------- RENDER -------- */
@@ -402,10 +450,7 @@ function renderTimers(){
         <button onclick="toggleTimer(${i})">${t.running?"⏸️ Pausa":"▶️ Iniciar"}</button>
         <button onclick="resetTimer(${i})">🔄 Reset</button>
         <button onclick="deleteTimer(${i})">🗑️ Borrar</button>
-
-        <!-- ✅ CAMBIO 2: BOTÓN EDITAR -->
         <button onclick="editTimer(${i})">✏️ Editar</button>
-
       </div>
     `;
 
@@ -416,48 +461,108 @@ function renderTimers(){
 }
 
 
-
-/* ---------- 🔵 NUEVA FUNCIÓN EDITAR ----------- */
-window.editTimer = i => {
+/* ---------- EDITAR ----------- */
+window.editTimer = async i => {
+  const old = { target: timers[i].target, note: timers[i].note, name: timers[i].name };
   const newTarget = prompt("Nuevo objetivo en minutos:", timers[i].target);
   if (!newTarget || isNaN(newTarget) || newTarget <= 0) return;
 
   timers[i].target = Number(newTarget);
   timers[i].completed = false;
-  save();
+
+  await save();
+
+  // Log cambio
+  logEvento(currentUid, "timer_editado", {
+    timerId: timers[i].createdAt,
+    cambios: {
+      target: { antes: old.target, despues: timers[i].target }
+    }
+  });
+
   renderTimers();
 };
 
 
+/* -------- TIMERS acciones -------- */
 
-/* -------- TIMERS -------- */
-
-window.toggleTimer = i => {
+window.toggleTimer = async i => {
   if(!dayStarted) return alert("Primero inicia el día.");
   timers[i].running = !timers[i].running;
+  await save();
+
+  const timerId = timers[i].createdAt;
+  if(timers[i].running){
+    // inicio
+    logEvento(currentUid, "timer_iniciado", {
+      timerId,
+      name: timers[i].name,
+      elapsedAntes: timers[i].elapsed
+    });
+  } else {
+    // pausa
+    logEvento(currentUid, "timer_pausado", {
+      timerId,
+      name: timers[i].name,
+      elapsed: timers[i].elapsed
+    });
+  }
+
   renderTimers();
 };
 
-window.resetTimer = i => {
+window.resetTimer = async i => {
+  const timerId = timers[i].createdAt;
+  const prevElapsed = timers[i].elapsed;
   timers[i].elapsed=0;
   timers[i].running=false;
   timers[i].completed=false;
+  await save();
+
+  logEvento(currentUid, "timer_reseteado", {
+    timerId,
+    prevElapsed
+  });
+
   renderTimers();
 };
 
-window.deleteTimer = i => {
+window.deleteTimer = async i => {
+  const timer = timers[i];
   timers.splice(i,1);
+  await save();
+
+  logEvento(currentUid, "timer_borrado", {
+    timerId: timer.createdAt,
+    name: timer.name,
+    target: timer.target,
+    elapsed: timer.elapsed
+  });
+
   renderTimers();
 };
 
+
+/* -------- TICKER: aumenta elapsed cuando running -------- */
 
 setInterval(()=>{
   let changed=false;
   timers.forEach(t=>{
     if(t.running){
       t.elapsed++;
-      if(t.elapsed>=t.target*60){
-        t.completed=true;
+      // detectar completado y loguear solo una vez por timer (por sesión)
+      if(t.elapsed >= t.target*60 && !t.completed){
+        t.completed = true;
+        const id = t.createdAt;
+        if(!loggedCompletions.has(id)){
+          loggedCompletions.add(id);
+          logEvento(currentUid, "timer_completado", {
+            timerId: id,
+            name: t.name,
+            elapsed: t.elapsed,
+            target: t.target
+          });
+        }
       }
       changed=true;
     }
@@ -465,9 +570,7 @@ setInterval(()=>{
   if(changed) renderTimers();
 },1000);
 
-
 setInterval(()=>save(),5000);
-
 
 
 /* -------- DRAG & DROP -------- */
@@ -500,20 +603,35 @@ function enableDragAndDrop(){
 }
 
 
-
 /* -------- DÍA -------- */
 
-document.getElementById("startDayBtn").onclick = () => {
+document.getElementById("startDayBtn").onclick = async () => {
   if(dayStarted) return alert("El día ya está iniciado.");
   dayStarted = new Date().toISOString();
-  save();
+  dayEnded = null;
+  await save();
+
+  // log inicio de día
+  logEvento(currentUid, "dia_iniciado", {
+    dia: (new Date()).toISOString().slice(0,10),
+    dayStarted
+  });
+
   renderTimers();
 };
 
-document.getElementById("endDayBtn").onclick = () => {
+document.getElementById("endDayBtn").onclick = async () => {
   if(!dayStarted) return alert("Aún no iniciaste el día.");
   dayEnded = new Date().toISOString();
 
+  // antes de borrar el estado actual, opcional: guardar snapshot del dia en event
+  const snapshot = {
+    dayStarted,
+    dayEnded,
+    timersSnapshot: JSON.parse(JSON.stringify(timers)) // copia
+  };
+
+  // reiniciar estado actual
   timers.forEach(t=>{
     t.running=false;
     t.elapsed=0;
@@ -522,7 +640,14 @@ document.getElementById("endDayBtn").onclick = () => {
 
   dayStarted = null;
 
-  save();
+  await save();
+
+  // log finalizacion de dia con snapshot
+  logEvento(currentUid, "dia_finalizado", {
+    dia: (new Date()).toISOString().slice(0,10),
+    ...snapshot
+  });
+
   renderTimers();
 };
 
@@ -532,13 +657,13 @@ document.getElementById("addTimerBtn").onclick = () =>
 
 </script>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
  
 <!-- Conexión al archivo externo de estadísticas -->
 <script type="module" src="estadisticas.js"></script>
 
 </body>
 </html>
+
 
 
 
