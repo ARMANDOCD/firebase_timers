@@ -19,6 +19,12 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
+// ---------------- CONTENEDOR ----------------
+const statsContainer = document.getElementById("statsGeneralEmbed");
+
+// ---------------- UID DEL USUARIO ----------------
+const MY_UID = "C3sby2bvibR0KBGagMXMdB13WMa2"; // tu UID
+
 // ---------------- UTIL ----------------
 function formatTime(totalSec){
   const h = Math.floor(totalSec/3600);
@@ -29,73 +35,59 @@ function formatTime(totalSec){
 
 // ---------------- MAIN ----------------
 export async function renderStatsGeneral(){
-  const statsContainer = document.getElementById("statsGeneralEmbed");
-  if(!statsContainer) return;
-
   statsContainer.innerHTML = "<p>Cargando estadísticas...</p>";
 
   try {
-    const usuariosRef = ref(db, "usuarios");
-    const snapshot = await get(usuariosRef);
-    const raw = snapshot.val();
-    if(!raw) {
-      statsContainer.innerHTML = "<p>No hay datos disponibles.</p>";
-      return;
-    }
+    const userRef = ref(db, `usuarios/${MY_UID}/cronometros`);
+    const snapshot = await get(userRef);
+    const cron = snapshot.val() || {};
 
     const rows = [];
 
-    Object.entries(raw).forEach(([uid, user])=>{
-      const cron = user.cronometros || {};
-
-      // Históricos
-      if(cron.historico){
-        Object.entries(cron.historico).forEach(([dayid, dayobj])=>{
-          const timers = dayobj.timers || [];
-          timers.forEach(t=>{
-            rows.push({
-              uid,
-              dayId: dayid,
-              name: t.name,
-              target_min: t.target,
-              elapsed_sec: t.elapsed,
-              completed: t.completed,
-              note: t.note,
-              createdAt: t.createdAt,
-              dayStarted: dayobj.dayStarted,
-              dayEnded: dayobj.dayEnded
-            });
-          });
-        });
-      }
-
-      // Día actual
-      if(cron.diaActual){
-        const dia = cron.diaActual;
-        const timers = dia.timers || [];
+    // Historial
+    if(cron.historico){
+      Object.entries(cron.historico).forEach(([dayid, dayobj])=>{
+        const day_start = dayobj.dayStarted;
+        const day_end   = dayobj.dayEnded;
+        const timers    = dayobj.timers || [];
         timers.forEach(t=>{
           rows.push({
-            uid,
-            dayId: "diaActual",
+            dayId: dayid,
             name: t.name,
             target_min: t.target,
             elapsed_sec: t.elapsed,
             completed: t.completed,
             note: t.note,
             createdAt: t.createdAt,
-            dayStarted: dia.dayStarted,
-            dayEnded: dia.dayEnded
+            dayStarted: day_start,
+            dayEnded: day_end
           });
         });
-      }
-    });
-
-    if(rows.length === 0){
-      statsContainer.innerHTML = "<p>No hay datos de cronómetros para mostrar.</p>";
-      return;
+      });
     }
 
-    // Procesamiento
+    // Día actual
+    if(cron.diaActual){
+      const dia = cron.diaActual;
+      const day_start = dia.dayStarted;
+      const day_end   = dia.dayEnded;
+      const timers = dia.timers || [];
+      timers.forEach(t=>{
+        rows.push({
+          dayId: "diaActual",
+          name: t.name,
+          target_min: t.target,
+          elapsed_sec: t.elapsed,
+          completed: t.completed,
+          note: t.note,
+          createdAt: t.createdAt,
+          dayStarted: day_start,
+          dayEnded: day_end
+        });
+      });
+    }
+
+    // ---------------- PROCESAMIENTO ----------------
     rows.forEach(r=>{
       r.dayStarted = r.dayStarted ? new Date(r.dayStarted) : null;
       r.dayEnded = r.dayEnded ? new Date(r.dayEnded) : null;
@@ -116,7 +108,7 @@ export async function renderStatsGeneral(){
     // Estadísticas por día
     const dayStats = {};
     dayIds.forEach(d=>{
-      const r = rows.filter(x=>x.dayId===d);
+      const r = rows.filter(x=>x.dayId === d);
       const total_sec = r.reduce((sum,x)=>sum+x.elapsed_sec,0);
       const target_min = r.reduce((sum,x)=>sum+x.target_min,0);
       const n_turnos = r.length;
@@ -141,7 +133,7 @@ export async function renderStatsGeneral(){
       dateStats[ds] = { total_sec, total_min, target_min, remaining_min, n_turnos, avg_activity_min, success };
     });
 
-    // Render
+    // ---------------- RENDER ----------------
     statsContainer.innerHTML = `
       <div style="background:#222;color:#fff;padding:15px;border-radius:10px;">
         <h3>📘 Estadísticas Totales</h3>
@@ -150,13 +142,13 @@ export async function renderStatsGeneral(){
         <p>📆 Número total de fechas: ${total_dates}</p>
         <hr style="border-color:#555;" />
         <h3>📗 Estadísticas por Día</h3>
-        ${Object.entries(dayStats).map(([day,d])=>`
+        ${Object.entries(dayStats).map(([day, d])=>`
           <div style="background:#1b3320;padding:8px;margin:4px;border-radius:6px;">
             <b>Día ${day}</b> - Tiempo: ${d.total_min.toFixed(1)} min, Restante: ${d.remaining_min.toFixed(1)} min, Media: ${d.avg_activity_min.toFixed(1)} min, Cumplió: ${d.success?"✔️":"❌"}
           </div>
         `).join("")}
         <h3>📙 Estadísticas por Fecha</h3>
-        ${Object.entries(dateStats).map(([date,d])=>`
+        ${Object.entries(dateStats).map(([date, d])=>`
           <div style="background:#3b2c00;padding:8px;margin:4px;border-radius:6px;">
             <b>${date}</b> - Tiempo: ${d.total_min.toFixed(1)} min, Restante: ${d.remaining_min.toFixed(1)} min, Media: ${d.avg_activity_min.toFixed(1)} min, Cumplió: ${d.success?"✔️":"❌"}
           </div>
@@ -165,9 +157,11 @@ export async function renderStatsGeneral(){
     `;
 
   } catch(e){
-    console.error(e);
-    statsContainer.innerHTML = "<p>Error cargando estadísticas.</p>";
+    console.error("Error cargando estadísticas:", e);
+    statsContainer.innerHTML = "<p>Error al cargar estadísticas.</p>";
   }
 }
+
+
 
 
