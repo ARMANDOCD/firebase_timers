@@ -23,7 +23,7 @@ const db = getDatabase(app);
 const statsContainer = document.getElementById("statsGeneralEmbed");
 
 // ---------------- UID DEL USUARIO ----------------
-const MY_UID = "C3sby2bvibR0KBGagMXMdB13WMa2"; // tu UID
+const MY_UID = "C3sby2bvibR0KBGagMXMdB13WMa2";
 
 // ---------------- UTIL ----------------
 function formatTime(totalSec){
@@ -133,34 +133,93 @@ export async function renderStatsGeneral(){
       dateStats[ds] = { total_sec, total_min, target_min, remaining_min, n_turnos, avg_activity_min, success };
     });
 
-    // ---------------- RENDER ----------------
+    // ---------------- RENDER HTML ----------------
     statsContainer.innerHTML = `
       <div style="background:#222;color:#fff;padding:15px;border-radius:10px;">
         <h3>📘 Estadísticas Totales</h3>
         <p>⏳ Tiempo total acumulado: ${total_time_str}</p>
         <p>📅 Número total de días: ${total_days}</p>
         <p>📆 Número total de fechas: ${total_dates}</p>
+        <button id="refreshStats" style="margin:10px;padding:6px 12px;border-radius:6px;">🔄 Actualizar</button>
         <hr style="border-color:#555;" />
         <h3>📗 Estadísticas por Día</h3>
-        ${Object.entries(dayStats).map(([day, d])=>`
-          <div style="background:#1b3320;padding:8px;margin:4px;border-radius:6px;">
-            <b>Día ${day}</b> - Tiempo: ${d.total_min.toFixed(1)} min, Restante: ${d.remaining_min.toFixed(1)} min, Media: ${d.avg_activity_min.toFixed(1)} min, Cumplió: ${d.success?"✔️":"❌"}
-          </div>
-        `).join("")}
+        <div id="statsPorDia"></div>
         <h3>📙 Estadísticas por Fecha</h3>
-        ${Object.entries(dateStats).map(([date, d])=>`
-          <div style="background:#3b2c00;padding:8px;margin:4px;border-radius:6px;">
-            <b>${date}</b> - Tiempo: ${d.total_min.toFixed(1)} min, Restante: ${d.remaining_min.toFixed(1)} min, Media: ${d.avg_activity_min.toFixed(1)} min, Cumplió: ${d.success?"✔️":"❌"}
-          </div>
-        `).join("")}
+        <div id="statsPorFecha"></div>
+        <canvas id="chartDias" style="margin-top:20px;"></canvas>
+        <canvas id="chartFechas" style="margin-top:20px;"></canvas>
       </div>
     `;
+
+    const statsPorDia = document.getElementById("statsPorDia");
+    const statsPorFecha = document.getElementById("statsPorFecha");
+
+    statsPorDia.innerHTML = Object.entries(dayStats).map(([day,d])=>`
+      <div style="background:#1b3320;padding:8px;margin:4px;border-radius:6px;">
+        <b>Día ${day}</b> - Tiempo: ${d.total_min.toFixed(1)} min, Restante: ${d.remaining_min.toFixed(1)} min, Media: ${d.avg_activity_min.toFixed(1)} min, Cumplió: ${d.success?"✔️":"❌"}
+      </div>
+    `).join("");
+
+    statsPorFecha.innerHTML = Object.entries(dateStats).map(([date,d])=>`
+      <div style="background:#3b2c00;padding:8px;margin:4px;border-radius:6px;">
+        <b>${date}</b> - Tiempo: ${d.total_min.toFixed(1)} min, Restante: ${d.remaining_min.toFixed(1)} min, Media: ${d.avg_activity_min.toFixed(1)} min, Cumplió: ${d.success?"✔️":"❌"}
+      </div>
+    `).join("");
+
+    // ---------------- GRÁFICOS ----------------
+    // Chart por Día
+    const ctxDias = document.getElementById("chartDias").getContext("2d");
+    new Chart(ctxDias,{
+      type: 'bar',
+      data:{
+        labels: Object.keys(dayStats),
+        datasets:[{
+          label:'Tiempo total (min)',
+          data: Object.values(dayStats).map(d=>d.total_min.toFixed(1)),
+          backgroundColor:'rgba(59,93,209,0.6)',
+          borderColor:'rgba(59,93,209,1)',
+          borderWidth:1
+        }]
+      },
+      options:{
+        responsive:true,
+        plugins:{legend:{display:false}},
+        scales:{y:{beginAtZero:true}}
+      }
+    });
+
+    // Chart por Fecha
+    const ctxFechas = document.getElementById("chartFechas").getContext("2d");
+    new Chart(ctxFechas,{
+      type: 'line',
+      data:{
+        labels: Object.keys(dateStats),
+        datasets:[{
+          label:'Tiempo acumulado (min)',
+          data: Object.values(dateStats).map(d=>d.total_min.toFixed(1)),
+          fill:true,
+          backgroundColor:'rgba(26,47,122,0.2)',
+          borderColor:'rgba(26,47,122,1)',
+          tension:0.3
+        }]
+      },
+      options:{
+        responsive:true,
+        plugins:{legend:{display:true}},
+        scales:{y:{beginAtZero:true}}
+      }
+    });
+
+    // ---------------- BOTÓN ACTUALIZAR ----------------
+    document.getElementById("refreshStats").onclick = () => renderStatsGeneral();
 
   } catch(e){
     console.error("Error cargando estadísticas:", e);
     statsContainer.innerHTML = "<p>Error al cargar estadísticas.</p>";
   }
 }
+
+
 
 
 
