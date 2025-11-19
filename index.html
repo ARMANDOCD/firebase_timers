@@ -887,6 +887,121 @@ async function renderRegistroEventos(){
     // ordenar filas por timestamp asc
     filas.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
 
+
+/* --- SNIPPET: construir SESSIONS y exponer window.registroProcesado --- */
+/* Pegar justo después de construir `eventosArr`, `dias`, `timersMeta`, `filas` */
+
+(function createAndExposeRegistroProcesado(){
+  // Construir sesiones (pares inicio -> cierre) a partir de eventosArr
+  const openMap = {}; // timerId -> { startEv }
+  const sessions = [];
+
+  function closeOpenSession(timerId, endEv, closingType){
+    const o = openMap[timerId];
+    if(!o) return;
+    const startEv = o.startEv;
+    const startTs = startEv.timestamp;
+    const endTs = endEv.timestamp || new Date().toISOString();
+    // prefer elapsed fields if present
+    const startElapsed = startEv.elapsedAntes !== undefined ? startEv.elapsedAntes : (startEv.elapsed || null);
+    const endElapsed = endEv.elapsed !== undefined ? endEv.elapsed : (endEv.elapsedAntes !== undefined ? endEv.elapsedAntes : null);
+    let durationSec;
+    if(typeof startElapsed === "number" && typeof endElapsed === "number"){
+      durationSec = Math.max(0, Math.round(endElapsed - startElapsed));
+    } else {
+      durationSec = Math.max(0, Math.round((new Date(endTs) - new Date(startTs))/1000));
+    }
+    // determine dia based on 'dias' intervals
+    let diaNum = null;
+    for(const d of dias){
+      const s = new Date(d.inicio);
+      const e = d.fin ? new Date(d.fin) : null;
+      const st = new Date(startTs);
+      if(e){
+        if(st >= s && st <= e){ diaNum = d.dia; break; }
+      } else {
+        if(st >= s){ diaNum = d.dia; break; }
+      }
+    }
+    const dateKey = (startTs) ? new Date(startTs).toISOString().slice(0,10) : null;
+
+    sessions.push({
+      timerId: timerId || null,
+      name: (startEv.name || (timersMeta && timersMeta[timerId] && timersMeta[timerId].name) || null),
+      startTs,
+      endTs,
+      startElapsed: startElapsed !== undefined ? startElapsed : null,
+      endElapsed: endElapsed !== undefined ? endElapsed : null,
+      durationSec,
+      dia: diaNum,
+      dateKey,
+      objetivoMin: (timersMeta && timersMeta[timerId] && timersMeta[timerId].target) ? Number(timersMeta[timerId].target) : (startEv && startEv.target ? Number(startEv.target) : null),
+      closingType: closingType || (endEv && endEv.tipo) || null
+    });
+
+    delete openMap[timerId];
+  }
+
+  // recorrer eventos ordenados asc
+  eventosArr.forEach(ev => {
+    const tipo = ev.tipo;
+    const tid = ev.timerId || null;
+    if(tipo === "timer_iniciado" && tid){
+      // abrir
+      openMap[tid] = { startEv: ev };
+    } else if(tid && (tipo === "timer_pausado" || tipo === "timer_reseteado" || tipo === "timer_completado" || tipo === "timer_borrado")){
+      closeOpenSession(tid, ev, tipo);
+    } else if(tipo === "timer_borrado" && !tid){
+      // evento borrado sin timerId: ignorar
+    }
+    // timer_creado / timer_editado no abren ni cierran sesiones
+  });
+
+  // cerrar sesiones abiertas usando day.fin si existe o now
+  const nowIso = new Date().toISOString();
+  Object.keys(openMap).forEach(timerId => {
+    // intentar cerrar en el fin del día si existe el día correspondiente
+    const openObj = openMap[timerId];
+    const startTs = openObj.startEv.timestamp;
+    // buscar dia que corresponda al start
+    let closed = false;
+    for(const d of dias){
+      const s = new Date(d.inicio);
+      const e = d.fin ? new Date(d.fin) : null;
+      const st = new Date(startTs);
+      if(e && st >= s && st <= e){
+        // cerrar at d.fin
+        const fakeEndEv = { timestamp: d.fin, tipo: "auto_cierre_por_day_end" };
+        closeOpenSession(timerId, fakeEndEv, "auto_cierre_por_day_end");
+        closed = true;
+        break;
+      }
+    }
+    if(!closed){
+      // cerrar at now
+      const fakeEndEv = { timestamp: nowIso, tipo: "auto_cierre_por_now" };
+      closeOpenSession(timerId, fakeEndEv, "auto_cierre_por_now");
+    }
+  });
+
+  // timersMeta ya la tienes (construida antes)
+  window.registroProcesado = {
+    dias: dias.map(d => ({
+      dia: d.dia,
+      inicio: d.inicio,
+      fin: d.fin || null,
+      dateKeys: d.rawInicio && d.rawInicio.timestamp ? [ (new Date(d.rawInicio.timestamp)).toISOString().slice(0,10) ] : (d.dateKeys || [])
+    })),
+    sessions: sessions,
+    timersMeta: timersMeta || {}
+  };
+
+  // notificar a quien escuche
+  window.dispatchEvent(new CustomEvent('registroProcesadoReady', { detail: window.registroProcesado }));
+})();
+
+
+    
     // RENDER TABLA
     const tbody = document.getElementById("registroBody");
     tbody.innerHTML = "";
@@ -941,6 +1056,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
