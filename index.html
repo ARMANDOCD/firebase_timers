@@ -908,7 +908,8 @@ async function renderRegistroEventos(){
     const startElapsed = startEv.elapsedAntes !== undefined ? startEv.elapsedAntes : (startEv.elapsed || null);
     const endElapsed = endEv.elapsed !== undefined ? endEv.elapsed : (endEv.elapsedAntes !== undefined ? endEv.elapsedAntes : null);
     let durationSec;
-    durationSec = Math.max(0,Math.round((new Date(endTs) - new Date(startTs)) / 1000));
+    durationSec = Math.max(0, Math.floor((new Date(endTs) - new Date(startTs)) / 1000));
+
 
     // determine dia based on 'dias' intervals
     let diaNum = null;
@@ -1055,6 +1056,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
