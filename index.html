@@ -625,32 +625,11 @@ window.deleteTimer = async i => {
 
 /* -------- TICKER: aumenta elapsed cuando running -------- */
 
+/* -------- TICKER: solo refrescar UI -------- */
 setInterval(()=>{
-  let changed=false;
-  timers.forEach(t=>{
-    if(t.running){
-      t.elapsed++;
-      // detectar completado y loguear solo una vez por timer (por sesión)
-      if(t.elapsed >= t.target*60 && !t.completed){
-        t.completed = true;
-        const id = t.createdAt;
-        if(!loggedCompletions.has(id)){
-          loggedCompletions.add(id);
-          logEvento(currentUid, "timer_completado", {
-            timerId: id,
-            name: t.name,
-            elapsed: t.elapsed,
-            target: t.target
-          });
-        }
-      }
-      changed=true;
-    }
-  });
-  if(changed) renderTimers();
-},1000);
+  renderTimers();
+}, 1000);
 
-setInterval(()=>save(),5000);
 
 
 /* -------- DRAG & DROP -------- */
@@ -1053,6 +1032,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
