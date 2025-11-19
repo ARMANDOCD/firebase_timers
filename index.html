@@ -907,12 +907,14 @@ async function renderRegistroEventos(){
     const endElapsed = endEv.elapsed !== undefined ? endEv.elapsed : (endEv.elapsedAntes !== undefined ? endEv.elapsedAntes : null);
     let durationSec;
     if(typeof startElapsed === "number" && typeof endElapsed === "number"){
-      durationSec = Math.max(0, Math.round(endElapsed - startElapsed));
+      durationSec = Math.max(0, (endElapsed - startElapsed) / 1000);
     } else {
-      durationSec = Math.max(0, Math.round(((new Date(endTs) - new Date(startTs))/100)/10));
+      durationSec = Math.max(0, (new Date(endTs) - new Date(startTs)) / 1000);
     }
+    durationSec = Number(durationSec.toFixed(3)); // precisión milisegundos, sin redondeo agresivo
+    
     // determine dia based on 'dias' intervals
-    let diaNum = null;
+        let diaNum = null;
     for(const d of dias){
       const s = new Date(d.inicio);
       const e = d.fin ? new Date(d.fin) : null;
@@ -1056,6 +1058,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
