@@ -911,7 +911,7 @@ async function renderRegistroEventos(){
     } else {
       durationSec = Math.max(0, (new Date(endTs) - new Date(startTs)) / 1000);
     }
-    durationSec = Number(durationSec.toFixed(3)); // precisión milisegundos, sin redondeo agresivo
+    //durationSec = Number(durationSec.toFixed(3)); // precisión milisegundos, sin redondeo agresivo
     
     // determine dia based on 'dias' intervals
         let diaNum = null;
@@ -1058,6 +1058,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
