@@ -926,11 +926,10 @@ async function renderRegistroEventos(){
     const endElapsed = endEv.elapsed !== undefined ? endEv.elapsed : (endEv.elapsedAntes !== undefined ? endEv.elapsedAntes : null);
     let durationSec;
     // ⏱️ SIEMPRE calcular duración usando timestamps reales
-durationSec = Math.max(
-  0,
-  Math.floor((new Date(endTs) - new Date(startTs)) / 1000)
-);
+let durationSec =
+  Math.max(0, (new Date(endTs) - new Date(startTs)) / 1000);
 
+  }
     //durationSec = Number(durationSec.toFixed(3)); // precisión milisegundos, sin redondeo agresivo
     
     // determine dia based on 'dias' intervals
@@ -1078,6 +1077,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
