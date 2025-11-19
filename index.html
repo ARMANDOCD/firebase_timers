@@ -546,9 +546,34 @@ if (t.running && t.startedAt) {
   enableDragAndDrop();
 }
 
-setInterval(() => {
+setInterval(async () => {
+  const now = new Date();
+
+  let needsSave = false;
+
+  timers.forEach(t => {
+    if(t.running && t.startedAt){
+      const deltaSec = Math.floor((now - new Date(t.startedAt)) / 1000);
+      t.elapsed = (t.elapsedAntes || 0) + deltaSec;
+
+      // Marcar completado si supera objetivo
+      if(!t.completed && t.elapsed >= t.target*60){
+        t.completed = true;
+        logEvento(currentUid, "timer_completado", { 
+          timerId: t.createdAt, 
+          name: t.name, 
+          elapsed: t.elapsed 
+        });
+        needsSave = true;
+      }
+    }
+  });
+
+  if(needsSave) await save();
+
   renderTimers();
 }, 1000);
+
 
 /* ---------- EDITAR ----------- */
 window.editTimer = async i => {
@@ -1058,6 +1083,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
