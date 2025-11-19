@@ -107,7 +107,6 @@ function computeMetrics(reg) {
     seen.forEach(tid => {
       if (timerTargets[tid] != null) objMin += timerTargets[tid];
       else {
-        // fallback: try find a session with objetivoMin for this timer
         const f = d.sessions.find(x => x.timerId === tid && x.objetivoMin);
         if (f && f.objetivoMin) objMin += Number(f.objetivoMin);
       }
@@ -315,7 +314,7 @@ async function renderCharts(metrics, registro, sessionsFiltered) {
     options: { maintainAspectRatio:false, responsive:true }
   });
 
-  // Racha (línea) -> fecha vs acumulado de éxito (1/0)
+  // Racha (línea)
   const perDate = metrics.perDate || metrics.perDate || {};
   const dateKeys = Object.keys(metrics.perDate || {}).sort();
   const rachaLabels = [], rachaData = [];
@@ -610,7 +609,10 @@ export async function renderStatsGeneral() {
 
 // expose for non-module usage fallback
 if (typeof window !== "undefined") window.renderStatsGeneral = window.renderStatsGeneral || renderStatsGeneral;
-export { renderStatsGeneral };
+
+// ❌ Línea problemática eliminada:
+// export { renderStatsGeneral };
+
 
 
 
