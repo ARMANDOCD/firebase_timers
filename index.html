@@ -625,30 +625,49 @@ window.deleteTimer = async i => {
 
 /* -------- TICKER: aumenta elapsed cuando running -------- */
 
-setInterval(()=>{
-  let changed=false;
-  timers.forEach(t=>{
-    if(t.running){
-      t.elapsed++;
-      // detectar completado y loguear solo una vez por timer (por sesión)
-      if(t.elapsed >= t.target*60 && !t.completed){
-        t.completed = true;
-        const id = t.createdAt;
-        if(!loggedCompletions.has(id)){
-          loggedCompletions.add(id);
-          logEvento(currentUid, "timer_completado", {
-            timerId: id,
-            name: t.name,
-            elapsed: t.elapsed,
-            target: t.target
-          });
-        }
-      }
-      changed=true;
+setInterval(() => {
+  let changed = false;
+
+  timers.forEach(t => {
+    if (!t.running) return;
+
+    // 1) Calculamos tiempo real transcurrido en ms
+    const now = performance.now();
+
+    if (t.startMs == null) {
+      // Primera vez que inicia esta sesión
+      t.startMs = now;
+      t.baseMs = t.baseMs || 0;
     }
+
+    // 2) Calcular tiempo exacto acumulado
+    t.acumuladoMs = t.baseMs + (now - t.startMs);
+
+    // 3) Verificar objetivo
+    const elapsedSec = Math.floor(t.acumuladoMs / 1000);
+
+    if (elapsedSec >= t.target * 60 && !t.completed) {
+      t.completed = true;
+
+      const id = t.createdAt;
+      if (!loggedCompletions.has(id)) {
+        loggedCompletions.add(id);
+        logEvento(currentUid, "timer_completado", {
+          timerId: id,
+          name: t.name,
+          elapsed: elapsedSec,
+          target: t.target
+        });
+      }
+    }
+
+    changed = true;
   });
-  if(changed) renderTimers();
-},1000);
+
+  if (changed) renderTimers();
+}, 200); // refresca cada 200ms, NO cuenta tiempo
+
+
 
 setInterval(()=>save(),5000);
 
@@ -1059,6 +1078,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
