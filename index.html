@@ -546,6 +546,9 @@ if (t.running && t.startedAt) {
   enableDragAndDrop();
 }
 
+setInterval(() => {
+  renderTimers();
+}, 1000);
 
 /* ---------- EDITAR ----------- */
 window.editTimer = async i => {
@@ -1056,6 +1059,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
