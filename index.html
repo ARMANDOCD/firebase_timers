@@ -517,10 +517,16 @@ function renderTimers(){
 
     const pctObj = (t.elapsed/(t.target*60)*100).toFixed(1);
     const pctTotal = (t.elapsed/totalTargetSeconds*100).toFixed(1);
-
+let displayElapsed = t.elapsed;
+if (t.running && t.startedAt) {
+  displayElapsed += Math.floor(
+    (new Date() - new Date(t.startedAt)) / 1000
+  );
+}
     div.innerHTML = `
       <h3>${t.name}</h3>
-      <p><span>${formatTimeFromSeconds(t.elapsed)}</span></p>
+      <p><span>${formatTimeFromSeconds(displayElapsed)}</span></p>
+
       <p>Objetivo: ${t.target} min</p>
       <p>Progreso específico: ${pctObj}%</p>
       <p>Progreso general: ${pctTotal}%</p>
@@ -1049,6 +1055,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
