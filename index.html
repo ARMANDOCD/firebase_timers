@@ -907,9 +907,9 @@ async function renderRegistroEventos(){
     const endElapsed = endEv.elapsed !== undefined ? endEv.elapsed : (endEv.elapsedAntes !== undefined ? endEv.elapsedAntes : null);
     let durationSec;
     if(typeof startElapsed === "number" && typeof endElapsed === "number"){
-      durationSec = Math.max(0, (endElapsed - startElapsed) / 1000);
+      durationSec = Math.max(0, Math.round((endElapsed - startElapsed)));
     } else {
-      durationSec = Math.max(0, (new Date(endTs) - new Date(startTs)) / 1000);
+      durationSec = Math.max(0, Math.floor((new Date(endTs) - new Date(startTs)) / 1000));
     }
     //durationSec = Number(durationSec.toFixed(3)); // precisión milisegundos, sin redondeo agresivo
     
@@ -1058,6 +1058,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
