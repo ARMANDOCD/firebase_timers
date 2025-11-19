@@ -653,8 +653,30 @@ window.deleteTimer = async i => {
 
 /* -------- TICKER: solo refrescar UI -------- */
 setInterval(()=>{
-  renderTimers();
-}, 1000);
+  let changed=false;
+  timers.forEach(t=>{
+    if(t.running){
+      t.elapsed++; // ⬅️ incrementa tiempo transcurrido
+      // marcar completado si alcanza objetivo
+      if(t.elapsed >= t.target*60 && !t.completed){
+        t.completed = true;
+        const id = t.createdAt;
+        if(!loggedCompletions.has(id)){
+          loggedCompletions.add(id);
+          logEvento(currentUid, "timer_completado", {
+            timerId: id,
+            name: t.name,
+            elapsed: t.elapsed,
+            target: t.target
+          });
+        }
+      }
+      changed=true;
+    }
+  });
+  if(changed) renderTimers(); // ⬅️ ⬅️ ⬅️ esto vuelve a dibujar los timers cada segundo
+},1000);
+
 
 
 
@@ -1059,6 +1081,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
