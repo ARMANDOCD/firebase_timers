@@ -1,93 +1,129 @@
 // estadisticas.js
-// Versión: Opción B (lee window.registroProcesado)
-// Exporta: renderStatsGeneral()
-// Requisitos: Chart.js (se carga dinámicamente desde CDN)
+// Versión única: procesa window.registroProcesado y renderiza Estadísticas Generales.
+// Modo: solo al entrar (no escucha en tiempo real).
+// Requiere: que index exponga window.registroProcesado o dispare 'registroProcesadoReady'.
+// Carga Chart.js dinámicamente.
 
-async function ensureChartJs(){
-  if(window.Chart) return;
-  await new Promise((resolve,reject)=>{
+async function ensureChartJs() {
+  if (window.Chart) return;
+  await new Promise((res, rej) => {
     const s = document.createElement("script");
     s.src = "https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js";
-    s.onload = resolve;
-    s.onerror = () => reject(new Error("No se pudo cargar Chart.js"));
+    s.onload = res;
+    s.onerror = () => rej(new Error("No se pudo cargar Chart.js"));
     document.head.appendChild(s);
   });
 }
 
 /* ---------- util ---------- */
-function pad2(n){ return String(n).padStart(2,"0"); }
-function secsToHHMMSS(secs){
-  if(secs == null || isNaN(secs)) return "00:00:00";
-  secs = Math.max(0, Math.round(secs));
-  const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), s = secs%60;
+const pad2 = n => String(n).padStart(2, "0");
+function secsToHHMMSS(secs) {
+  secs = Number(secs) || 0;
+  if (isNaN(secs) || secs <= 0) return "00:00:00";
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = Math.floor(secs % 60);
   return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
 }
-function dateKeyFromIso(ts){
-  if(!ts) return null;
-  try { return new Date(ts).toISOString().slice(0,10); } catch(e){ return null; }
+function isoToDateKey(iso) {
+  try { return new Date(iso).toISOString().slice(0, 10); } catch { return null; }
 }
-function localStr(ts){ try { return new Date(ts).toLocaleString(); } catch(e){ return String(ts); } }
-function escapeHtml(s){ if(s === null || s === undefined) return ""; return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;"); }
+function localStr(iso) { try { return new Date(iso).toLocaleString(); } catch { return iso; } }
+function escapeHtml(s) { if (s === null || s === undefined) return ""; return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;"); }
 
-/* ---------- cálculo de métricas ---------- */
-function calcMetricsFromRegistro(reg){
-  const dias = Array.isArray(reg.dias) ? reg.dias : [];
-  const sessions = Array.isArray(reg.sessions) ? reg.sessions : [];
+/* ---------- normalize registro ---------- */
+function normalizeRegistro(raw) {
+  // Expected: raw = { dias:[], sessions:[], timersMeta:{} }
+  const reg = raw || {};
+  const dias = Array.isArray(reg.dias) ? reg.dias.map(d => ({
+    dia: d.dia,
+    inicio: d.inicio,
+    fin: d.fin || null,
+    dateKeys: Array.isArray(d.dateKeys) ? d.dateKeys : (d.dateKeys ? [d.dateKeys] : [])
+  })) : [];
+
+  const sessions = Array.isArray(reg.sessions) ? reg.sessions.map(s => ({
+    timerId: s.timerId || null,
+    name: s.name || s.nombre || null,
+    startTs: s.startTs || s.inicio || s.start || null,
+    endTs: s.endTs || s.fin || s.end || null,
+    durationSec: Number(s.durationSec || s.duracion || 0),
+    dia: (s.dia === undefined ? (s.dia === null ? null : null) : s.dia),
+    dateKey: s.dateKey || s.fecha || isoToDateKey(s.startTs || s.inicio),
+    objetivoMin: s.objetivoMin || s.target || null,
+    closingType: s.closingType || s.tipo || null
+  })) : [];
+
   const timersMeta = reg.timersMeta || {};
 
-  // total acumulado
-  const totalAccumulatedSec = sessions.reduce((s,x)=>s + (Number(x.durationSec)||0), 0);
+  // Ensure numeric durations and dia numbers
+  sessions.forEach(s => {
+    s.durationSec = Number(s.durationSec || 0);
+    if (s.dia !== null && s.dia !== undefined) s.dia = Number(s.dia);
+  });
 
-  // número de días (work-days)
+  return { dias, sessions, timersMeta };
+}
+
+/* ---------- metrics calculation ---------- */
+function computeMetrics(reg) {
+  const { dias, sessions, timersMeta } = reg;
+
+  // total accumulated
+  const totalAccumulatedSec = sessions.reduce((acc, s) => acc + (Number(s.durationSec) || 0), 0);
+
+  // num work-days
   const numDias = dias.length;
 
-  // número de fechas calendario con actividad
+  // num calendar dates
   const uniqueDates = new Set(sessions.map(s => s.dateKey).filter(Boolean));
   const numFechas = uniqueDates.size;
 
-  // per-day aggregation
-  const perDia = {}; // key = dia number or 'sin_dia'
-  dias.forEach(d => perDia[d.dia] = { dia:d.dia, inicio:d.inicio, fin:d.fin||null, dateKeys: d.dateKeys || [], totalSec:0, sessions:[], objetivosMinTotal:0 });
-  if(!perDia["sin_dia"]) perDia["sin_dia"] = { dia:null, totalSec:0, sessions:[], objetivosMinTotal:0, dateKeys:[] };
+  // per-day aggregation (by dia number)
+  const perDia = {};
+  dias.forEach(d => {
+    perDia[d.dia] = { dia: d.dia, inicio: d.inicio, fin: d.fin || null, dateKeys: d.dateKeys || [], totalSec: 0, sessions: [], objetivosMinTotal: 0, objetivoSecTotal: 0, tiempoRestanteSec: 0, exitoso: false };
+  });
+  if (!perDia["sin_dia"]) perDia["sin_dia"] = { dia: null, totalSec: 0, sessions: [], objetivosMinTotal: 0, dateKeys: [], objetivoSecTotal: 0, tiempoRestanteSec: 0, exitoso: false };
 
   sessions.forEach(s => {
     const k = (s.dia === null || s.dia === undefined) ? "sin_dia" : s.dia;
-    if(!perDia[k]) perDia[k] = { dia:k, totalSec:0, sessions:[], objetivosMinTotal:0, dateKeys:[] };
-    perDia[k].totalSec += (Number(s.durationSec) || 0);
+    if (!perDia[k]) perDia[k] = { dia: k, totalSec: 0, sessions: [], objetivosMinTotal: 0, dateKeys: [], objetivoSecTotal: 0, tiempoRestanteSec: 0, exitoso: false };
     perDia[k].sessions.push(s);
-    if(s.dateKey && !perDia[k].dateKeys.includes(s.dateKey)) perDia[k].dateKeys.push(s.dateKey);
+    perDia[k].totalSec += Number(s.durationSec || 0);
+    if (s.dateKey && !perDia[k].dateKeys.includes(s.dateKey)) perDia[k].dateKeys.push(s.dateKey);
   });
 
-  // compute objetivos por día (sum targets of timers used that day)
+  // compute objetivos per day: sum of timer targets used in that day
   const timerTargets = {};
-  Object.entries(timersMeta || {}).forEach(([id,meta]) => {
-    if(meta && meta.target) timerTargets[id] = Number(meta.target);
+  Object.entries(timersMeta || {}).forEach(([id, meta]) => {
+    if (meta && meta.target != null) timerTargets[id] = Number(meta.target);
   });
 
-  Object.values(perDia).forEach(d=>{
+  Object.values(perDia).forEach(d => {
     const seen = new Set();
-    d.sessions.forEach(s => { if(s.timerId) seen.add(s.timerId); if(s.objetivoMin) seen.add(s.timerId); });
+    d.sessions.forEach(s => { if (s.timerId) seen.add(s.timerId); if (s.objetivoMin && !s.timerId) {} });
     let objMin = 0;
     seen.forEach(tid => {
-      if(timerTargets[tid]) objMin += Number(timerTargets[tid]);
+      if (timerTargets[tid] != null) objMin += timerTargets[tid];
       else {
-        // fallback: search a session with objetivoMin
+        // fallback: try find a session with objetivoMin for this timer
         const f = d.sessions.find(x => x.timerId === tid && x.objetivoMin);
-        if(f && f.objetivoMin) objMin += Number(f.objetivoMin);
+        if (f && f.objetivoMin) objMin += Number(f.objetivoMin);
       }
     });
     d.objetivosMinTotal = objMin;
-    d.objetivoSecTotal = Math.round(objMin*60);
+    d.objetivoSecTotal = Math.round(objMin * 60);
     d.tiempoRestanteSec = Math.max(0, d.objetivoSecTotal - d.totalSec);
     d.exitoso = (d.objetivoSecTotal > 0) ? (d.totalSec >= d.objetivoSecTotal) : false;
   });
 
-  // per-date calendar aggregation
+  // per-date aggregation (calendar)
   const perDate = {};
   sessions.forEach(s => {
-    const k = s.dateKey || dateKeyFromIso(s.startTs);
-    if(!perDate[k]) perDate[k] = { dateKey:k, totalSec:0, sessions:[] };
-    perDate[k].totalSec += (Number(s.durationSec) || 0);
+    const k = s.dateKey || isoToDateKey(s.startTs);
+    if (!perDate[k]) perDate[k] = { dateKey: k, totalSec: 0, sessions: [] };
+    perDate[k].totalSec += Number(s.durationSec || 0);
     perDate[k].sessions.push(s);
   });
 
@@ -95,33 +131,33 @@ function calcMetricsFromRegistro(reg){
   const perDateObjetivos = {};
   Object.keys(perDate).forEach(dk => {
     const timersSeen = new Set();
-    perDate[dk].sessions.forEach(s => { if(s.timerId) timersSeen.add(s.timerId); });
+    perDate[dk].sessions.forEach(s => { if (s.timerId) timersSeen.add(s.timerId); });
     let objMin = 0;
     timersSeen.forEach(tid => {
-      if(timerTargets[tid]) objMin += Number(timerTargets[tid]);
+      if (timerTargets[tid] != null) objMin += timerTargets[tid];
       else {
         const f = perDate[dk].sessions.find(x => x.timerId === tid && x.objetivoMin);
-        if(f && f.objetivoMin) objMin += Number(f.objetivoMin);
+        if (f && f.objetivoMin) objMin += Number(f.objetivoMin);
       }
     });
     perDateObjetivos[dk] = objMin;
   });
 
-  // racha máxima de fechas exitosas (calendar)
+  // compute max racha of successful dates (calendar)
   const dateKeysSorted = Object.keys(perDate).sort();
   let maxRacha = 0, curRacha = 0;
-  dateKeysSorted.forEach(k=>{
+  dateKeysSorted.forEach(k => {
     const objetivoMin = perDateObjetivos[k] || 0;
-    const isEx = (objetivoMin > 0) ? (perDate[k].totalSec >= Math.round(objetivoMin*60)) : false;
-    if(isEx){ curRacha++; maxRacha = Math.max(maxRacha, curRacha); } else { curRacha = 0; }
+    const isEx = (objetivoMin > 0) ? (perDate[k].totalSec >= Math.round(objetivoMin * 60)) : false;
+    if (isEx) { curRacha++; maxRacha = Math.max(maxRacha, curRacha); } else { curRacha = 0; }
   });
 
-  // total dias exitosos (work-days)
-  const diasExitososCount = Object.values(perDia).filter(d => d.dia !== null && d.objetivoSecTotal && d.totalSec >= d.objetivoSecTotal).length;
+  // total days successful (work-day)
+  const diasExitososCount = Object.values(perDia).filter(d => (d.dia !== null) && d.objetivoSecTotal && d.totalSec >= d.objetivoSecTotal).length;
 
-  // promedio por sesión
-  const sesCount = sessions.length;
-  const mediaPorSesion = sesCount ? Math.round(totalAccumulatedSec / sesCount) : 0;
+  // averages
+  const sessionsCount = sessions.length;
+  const mediaPorSesion = sessionsCount ? Math.round(totalAccumulatedSec / sessionsCount) : 0;
   const mediaPorTurno = mediaPorSesion;
 
   return {
@@ -141,55 +177,71 @@ function calcMetricsFromRegistro(reg){
 }
 
 /* ---------- UI builder ---------- */
-function buildBaseUI(container){
-  container.innerHTML = `
-    <div id="stats-root" style="padding:10px;">
-      <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:12px;">
-        <div style="background:#fff;padding:12px;border-radius:8px;min-width:260px;box-shadow:0 6px 18px rgba(0,0,0,0.06);">
-          <div style="font-weight:700">Estadísticas totales</div>
-          <div id="totalAccum">Tiempo total acumulado: --:--:--</div>
+function buildBaseUI(root) {
+  root.innerHTML = `
+    <div id="stats-root" style="padding:12px;">
+      <div style="display:flex; gap:14px; flex-wrap:wrap; margin-bottom:12px;">
+        <div style="background:#fff;padding:12px;border-radius:8px;min-width:260px;box-shadow:0 8px 22px rgba(0,0,0,0.06);">
+          <div style="font-weight:800; margin-bottom:6px;">Estadísticas totales</div>
+          <div id="totalAccum" style="font-size:1.05rem; margin-bottom:6px;">Tiempo total acumulado: --:--:--</div>
           <div id="totalDias" class="small">Número de días totales transcurridos: --</div>
           <div id="totalFechas" class="small">Número de fechas totales transcurridas: --</div>
         </div>
 
-        <div id="filtersBox" style="display:flex; gap:8px;">
-          <div style="background:#fff;padding:10px;border-radius:8px;min-width:260px;box-shadow:0 6px 12px rgba(0,0,0,0.04);">
-            <div style="font-weight:700">Filtrar por Día de trabajo</div>
-            <div id="daysChecklist" style="max-height:140px; overflow:auto; margin-top:6px;"></div>
-            <div style="margin-top:8px; display:flex; gap:6px;"><button id="selectAllDaysBtn">Seleccionar todo</button><button id="clearDaysBtn">Limpiar</button></div>
-          </div>
-
-          <div style="background:#fff;padding:10px;border-radius:8px;min-width:320px;box-shadow:0 6px 12px rgba(0,0,0,0.04);">
-            <div style="font-weight:700">Filtrar por Fecha calendario</div>
-            <div style="display:flex; gap:6px; margin-top:6px;">
-              <input type="date" id="filterDateFrom"><input type="date" id="filterDateTo">
-              <button id="applyDateBtn">Aplicar</button><button id="clearDateBtn">Limpiar</button>
+        <div style="background:#fff;padding:10px;border-radius:8px;min-width:340px;box-shadow:0 6px 18px rgba(0,0,0,0.04);">
+          <div style="font-weight:700; margin-bottom:8px;">Filtros</div>
+          <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+            <div style="flex:1">
+              <div style="font-weight:600; margin-bottom:6px;">Día de trabajo</div>
+              <div id="daysChecklist" style="max-height:140px; overflow:auto; border:1px solid #eee; padding:8px; border-radius:6px;"></div>
+              <div style="margin-top:8px; display:flex; gap:6px;">
+                <button id="selectAllDaysBtn">Seleccionar todo</button>
+                <button id="clearDaysBtn">Limpiar</button>
+              </div>
             </div>
-            <div style="margin-top:8px; display:flex; gap:6px;"><button id="todayBtn">Hoy</button><button id="thisWeekBtn">Esta semana</button><button id="thisMonthBtn">Este mes</button></div>
+            <div style="width:220px;">
+              <div style="font-weight:600; margin-bottom:6px;">Fecha calendario</div>
+              <div style="display:flex; gap:6px;">
+                <input type="date" id="filterDateFrom" style="width:100px;">
+                <input type="date" id="filterDateTo" style="width:100px;">
+              </div>
+              <div style="margin-top:8px; display:flex; gap:6px;">
+                <button id="applyDateBtn">Aplicar</button>
+                <button id="clearDateBtn">Limpiar</button>
+              </div>
+              <div style="margin-top:8px; display:flex; gap:6px;">
+                <button id="todayBtn">Hoy</button>
+                <button id="thisWeekBtn">Semana</button>
+                <button id="thisMonthBtn">Mes</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div style="display:grid; grid-template-columns:1fr 420px; gap:12px;">
-        <div style="background:#fff;padding:12px;border-radius:8px;">
-          <h3 style="margin-top:0">Historial y estadísticas por día</h3>
+      <div style="display:grid; grid-template-columns:1fr 420px; gap:14px;">
+        <div style="background:#fff;padding:12px;border-radius:8px; box-shadow:0 8px 22px rgba(0,0,0,0.04);">
+          <h3 style="margin:6px 0;">Historial y estadísticas por día</h3>
           <div id="tableByDay"></div>
 
-          <h3 style="margin-top:12px">Historial y estadísticas por fecha</h3>
+          <h3 style="margin:10px 0 6px 0;">Historial y estadísticas por fecha</h3>
           <div id="tableByDate"></div>
         </div>
 
-        <div style="background:#fff;padding:12px;border-radius:8px;">
-          <h3 style="margin-top:0">Gráficos</h3>
-          <div style="height:220px;"><canvas id="chartTimePerDay"></canvas></div>
-          <div style="height:220px;margin-top:12px;"><canvas id="chartByActivity"></canvas></div>
-          <div style="margin-top:8px;">
+        <div style="background:#fff;padding:12px;border-radius:8px; box-shadow:0 8px 22px rgba(0,0,0,0.04);">
+          <h3 style="margin:6px 0;">Gráficos</h3>
+          <div style="height:220px;"><canvas id="chartTimePerDay" style="width:100%; height:100%;"></canvas></div>
+          <div style="height:220px; margin-top:12px;"><canvas id="chartRacha" style="width:100%; height:100%;"></canvas></div>
+          <div style="margin-top:12px;"><canvas id="chartByActivity" style="width:100%; height:160px;"></canvas></div>
+
+          <div style="margin-top:10px;">
             <div><b>Media por sesión:</b> <span id="mediaSesionText">--</span></div>
             <div><b>Media por turno:</b> <span id="mediaTurnoText">--</span></div>
             <div><b>Días exitosos (tot):</b> <span id="diasExitososText">--</span></div>
             <div><b>Máxima racha:</b> <span id="maxRachaText">--</span></div>
           </div>
-          <div style="margin-top:10px;"><button id="exportCsvBtn">Exportar CSV del filtro</button></div>
+
+          <div style="margin-top:12px;"><button id="exportCsvBtn">Exportar CSV (filtro actual)</button></div>
         </div>
       </div>
     </div>
@@ -197,100 +249,121 @@ function buildBaseUI(container){
 }
 
 /* ---------- helpers UI ---------- */
-function buildDaysChecklist(dias){
+function buildDaysChecklist(dias) {
   const container = document.getElementById("daysChecklist");
   container.innerHTML = "";
-  dias.slice().sort((a,b)=>a.dia-b.dia).forEach(d=>{
+  (dias || []).slice().sort((a,b)=>a.dia - b.dia).forEach(d => {
     const id = `dchk_${d.dia}`;
     const row = document.createElement("div");
     row.style.display="flex"; row.style.alignItems="center"; row.style.gap="8px"; row.style.marginBottom="6px";
     const chk = document.createElement("input"); chk.type="checkbox"; chk.id=id; chk.value=d.dia; chk.checked=true;
-    chk.onchange = () => updateViews(); // defined later
+    chk.onchange = () => updateViews();
     const lbl = document.createElement("label"); lbl.htmlFor = id; lbl.innerHTML = `Día ${d.dia} — ${localStr(d.inicio)} → ${d.fin?localStr(d.fin):"(en curso)"}`;
     row.appendChild(chk); row.appendChild(lbl); container.appendChild(row);
   });
-  const selectAllBtn = document.getElementById("selectAllDaysBtn");
-  const clearBtn = document.getElementById("clearDaysBtn");
-  if(selectAllBtn) selectAllBtn.onclick = () => { Array.from(container.querySelectorAll("input[type=checkbox]")).forEach(i=>i.checked=true); updateViews(); };
-  if(clearBtn) clearBtn.onclick = () => { Array.from(container.querySelectorAll("input[type=checkbox]")).forEach(i=>i.checked=false); updateViews(); };
+
+  const selectAll = document.getElementById("selectAllDaysBtn");
+  const clearAll = document.getElementById("clearDaysBtn");
+  if (selectAll) selectAll.onclick = () => { Array.from(container.querySelectorAll("input[type=checkbox]")).forEach(i=>i.checked=true); updateViews(); };
+  if (clearAll) clearAll.onclick = () => { Array.from(container.querySelectorAll("input[type=checkbox]")).forEach(i=>i.checked=false); updateViews(); };
 }
 
-function getSelectedDays(){
-  const checks = Array.from(document.querySelectorAll("#daysChecklist input[type=checkbox]"));
-  return checks.filter(c=>c.checked).map(c=>Number(c.value));
+function getSelectedDays() {
+  return Array.from(document.querySelectorAll("#daysChecklist input[type=checkbox]:checked")).map(i=>Number(i.value));
 }
 
-function getDateRange(){
-  const fromV = document.getElementById("filterDateFrom").value;
-  const toV = document.getElementById("filterDateTo").value;
-  if(!fromV && !toV) return null;
-  const from = fromV ? new Date(fromV + "T00:00:00") : null;
-  const to = toV ? new Date(toV + "T23:59:59") : null;
+function getDateRange() {
+  const f = document.getElementById("filterDateFrom").value;
+  const t = document.getElementById("filterDateTo").value;
+  if (!f && !t) return null;
+  const from = f ? new Date(f + "T00:00:00") : null;
+  const to = t ? new Date(t + "T23:59:59") : null;
   return { from, to };
 }
 
-/* Chart containers holders */
-let _chartTimePerDay = null;
-let _chartByActivity = null;
+/* ---------- charts ---------- */
+let chartTimePerDay = null;
+let chartRacha = null;
+let chartByActivity = null;
 
-/* ---------- charts render ---------- */
-async function renderCharts(metrics, registro, sessionsFiltered){
+async function renderCharts(metrics, registro, sessionsFiltered) {
   await ensureChartJs();
   const Chart = window.Chart;
 
   // Time per day (bar)
   const selDays = new Set(getSelectedDays());
-  const labels = [], data = [];
-  (registro.dias || []).slice().sort((a,b)=>a.dia-b.dia).forEach(d=>{
-    if(selDays.size && !selDays.has(d.dia)) return;
+  const labels = []; const data = [];
+  (registro.dias || []).slice().sort((a,b)=>a.dia - b.dia).forEach(d=>{
+    if (selDays.size && !selDays.has(d.dia)) return;
     const pd = metrics.perDia[d.dia] || { totalSec:0 };
-    // date range intersection check
     const dr = getDateRange();
-    if(dr && dr.from && dr.to){
-      const intersects = (d.dateKeys || []).some(k => { const dd = new Date(k + "T00:00:00"); return dd >= dr.from && dd <= dr.to; });
-      if(!intersects) return;
+    if (dr && dr.from && dr.to) {
+      const intersects = (d.dateKeys || []).some(k => {
+        const dd = new Date(k + "T00:00:00");
+        return dd >= dr.from && dd <= dr.to;
+      });
+      if (!intersects) return;
     }
     labels.push(`D${d.dia}`); data.push(Math.round((pd.totalSec||0)/60));
   });
 
-  if(_chartTimePerDay) _chartTimePerDay.destroy();
+  if (chartTimePerDay) chartTimePerDay.destroy();
   const ctx1 = document.getElementById("chartTimePerDay").getContext("2d");
-  _chartTimePerDay = new Chart(ctx1, {
+  chartTimePerDay = new Chart(ctx1, {
     type: "bar",
     data: { labels, datasets: [{ label: "Minutos por día", data }] },
     options: { maintainAspectRatio:false, responsive:true }
   });
 
-  // By activity (pie) - from sessionsFiltered
+  // Racha (línea) -> fecha vs acumulado de éxito (1/0)
+  const perDate = metrics.perDate || metrics.perDate || {};
+  const dateKeys = Object.keys(metrics.perDate || {}).sort();
+  const rachaLabels = [], rachaData = [];
+  dateKeys.forEach(k => {
+    rachaLabels.push(k);
+    const objetivoMin = (metrics.perDateObjetivos && metrics.perDateObjetivos[k]) || 0;
+    const isEx = objetivoMin > 0 ? ((metrics.perDate && metrics.perDate[k] && metrics.perDate[k].totalSec >= Math.round(objetivoMin*60)) ? 1 : 0) : 0;
+    rachaData.push(isEx);
+  });
+
+  if (chartRacha) chartRacha.destroy();
+  const ctx2 = document.getElementById("chartRacha").getContext("2d");
+  chartRacha = new Chart(ctx2, {
+    type: "line",
+    data: { labels: rachaLabels, datasets: [{ label: "Fechas exitosas (1=éxito)", data: rachaData, fill:false, tension:0.2 }] },
+    options: { maintainAspectRatio:false, responsive:true, scales: { y: { ticks: { stepSize: 1 }, min: 0, max: 1 } } }
+  });
+
+  // By activity (pie)
   const perAct = {};
   (sessionsFiltered || []).forEach(s => {
     const name = s.name || s.timerId || "sin_nombre";
-    perAct[name] = (perAct[name] || 0) + (Number(s.durationSec)||0);
+    perAct[name] = (perAct[name] || 0) + (Number(s.durationSec) || 0);
   });
   const actLabels = Object.keys(perAct);
   const actData = actLabels.map(l => Math.round(perAct[l]/60));
-  if(_chartByActivity) _chartByActivity.destroy();
-  const ctx2 = document.getElementById("chartByActivity").getContext("2d");
-  _chartByActivity = new Chart(ctx2, {
-    type: "pie",
+  if (chartByActivity) chartByActivity.destroy();
+  const ctx3 = document.getElementById("chartByActivity").getContext("2d");
+  chartByActivity = new Chart(ctx3, {
+    type: "doughnut",
     data: { labels: actLabels, datasets: [{ data: actData }] },
     options: { maintainAspectRatio:false, responsive:true }
   });
 }
 
 /* ---------- CSV export ---------- */
-function exportCsvFiltered(registro, metrics){
-  const selDays = new Set(getSelectedDays().map(x=>Number(x)));
+function exportCsvFiltered(registro) {
+  const selDays = new Set(getSelectedDays().map(x => Number(x)));
   const dr = getDateRange();
   const rows = [];
   rows.push(["Día","Cronómetro","Inicio","Fin","Duración(s)","Duración(HH:MM:SS)","Fecha clave","Objetivo(min)"]);
-  (registro.sessions || []).forEach(s=>{
-    if(selDays.size && (s.dia === null || !selDays.has(Number(s.dia)))) return;
-    if(dr && dr.from && dr.to){
-      const dd = new Date(s.dateKey + "T00:00:00");
-      if(dd < dr.from || dd > dr.to) return;
+  (registro.sessions || []).forEach(s => {
+    if (selDays.size && (s.dia === null || !selDays.has(Number(s.dia)))) return;
+    if (dr && dr.from && dr.to) {
+      const dd = new Date((s.dateKey || isoToDateKey(s.startTs)) + "T00:00:00");
+      if (dd < dr.from || dd > dr.to) return;
     }
-    rows.push([ s.dia === null ? "" : s.dia, s.name || s.timerId || "", localStr(s.startTs), localStr(s.endTs), s.durationSec||0, secsToHHMMSS(s.durationSec||0), s.dateKey||"", s.objetivoMin || "" ]);
+    rows.push([ s.dia === null ? "" : s.dia, s.name || s.timerId || "", localStr(s.startTs), localStr(s.endTs), s.durationSec || 0, secsToHHMMSS(s.durationSec || 0), s.dateKey || "", s.objetivoMin || "" ]);
   });
   const csv = rows.map(r => r.map(c => `"${String(c).replaceAll('"','""')}"`).join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -300,234 +373,244 @@ function exportCsvFiltered(registro, metrics){
   document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
 
-/* ---------- render principal (expuesto) ---------- */
-export async function renderStatsGeneral(){
-  await ensureChartJs();
-  const root = document.getElementById("statsGeneralEmbed");
-  if(!root){ console.error("No existe #statsGeneralEmbed"); return; }
+/* ---------- render tables ---------- */
+function renderTableByDay(registro, metrics, sessionsFiltered) {
+  const wrap = document.getElementById("tableByDay");
+  wrap.innerHTML = "";
+  const table = document.createElement("table");
+  table.style.width = "100%"; table.style.borderCollapse = "collapse";
+  table.innerHTML = `<thead><tr style="background:#f5f5f5"><th style="padding:8px">Día</th><th style="padding:8px">Fechas</th><th style="padding:8px">Tiempo acumulado</th><th style="padding:8px">Objetivo(min)</th><th style="padding:8px">Restante</th><th style="padding:8px">Sesiones</th><th style="padding:8px">Éxito</th></tr></thead><tbody></tbody>`;
+  const tbody = table.querySelector("tbody");
 
-  buildBaseUI(root);
+  (registro.dias || []).slice().sort((a,b)=>a.dia - b.dia).forEach(d => {
+    const pd = metrics.perDia[d.dia] || { totalSec:0, sessions:[], objetivosMinTotal:0, tiempoRestanteSec:0, exitoso:false, dateKeys: d.dateKeys || [] };
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td style="padding:8px;border-bottom:1px solid #eee">${d.dia}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee">${(d.dateKeys||[]).join(", ")}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee">${secsToHHMMSS(pd.totalSec||0)}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee">${pd.objetivosMinTotal||0}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee">${secsToHHMMSS(pd.tiempoRestanteSec||0)}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee">${(pd.sessions && pd.sessions.length) || 0}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee">${pd.exitoso ? "✅" : "—"}</td>`;
+    tbody.appendChild(tr);
+  });
 
-  // If registroProcesado exists, use it. MODE A (no reading Firebase here).
-  if(window.registroProcesado){
-    proceedWithRegistro(window.registroProcesado);
-    return;
-  }
-
-  // Otherwise show a helpful message and options to open Registro or force process (if available)
-  root.innerHTML = `
-    <div style="padding:12px; background:#fff; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.04);">
-      <div style="font-weight:700; margin-bottom:8px;">No se encontraron datos procesados (registroProcesado)</div>
-      <div style="margin-bottom:8px;">Para generar estadísticas, primero el "Registro de eventos" debe procesar los eventos y exponer <code>window.registroProcesado</code>.</div>
-      <div style="display:flex; gap:8px;">
-        <button id="openRegistroBtn">Abrir Registro de eventos</button>
-        <button id="tryForceBtn">Forzar procesado (si está disponible)</button>
-      </div>
-      <div style="margin-top:8px; font-size:0.9rem; color:#555;">Sugerencia: abre la sección "Registro de eventos" y pulsa "Refrescar ahora" o asegura que el registro expone la variable global. Luego vuelve aquí.</div>
-    </div>
-  `;
-
-  document.getElementById("openRegistroBtn").onclick = () => {
-    // intenta navegar a la sección de registro (tu SPA define openSection)
-    if(typeof openSection === "function"){
-      openSection('registroEventos');
-    } else {
-      alert("Función openSection no encontrada. Abre manualmente la sección Registro de eventos.");
-    }
-  };
-
-  document.getElementById("tryForceBtn").onclick = () => {
-    // intenta llamar a la función que procesa el registro de forma silenciosa si existe
-    const possibleFns = [
-      window.renderRegistroEventos,
-      window.renderRegistro, // posibles nombres alternativos
-      window.buildRegistroProcesado
-    ];
-    const fn = possibleFns.find(f => typeof f === "function");
-    if(fn){
-      try{
-        // si la función acepta un argumento 'silent', pásalo
-        try { fn(true); } catch(e){ fn(); }
-        // wait un breve momento y reintentar leer variable
-        setTimeout(()=>{ if(window.registroProcesado) proceedWithRegistro(window.registroProcesado); else alert("La función se ejecutó pero registroProcesado sigue sin existir. Abre Registro manualmente y refresca."); }, 800);
-      } catch(err){
-        alert("Error ejecutando la función de procesado: " + err.message);
-      }
-    } else {
-      alert("No se detectó función automática de procesado en la página. Abre la sección Registro y pulsa 'Refrescar ahora'.");
-    }
-  };
+  wrap.appendChild(table);
 }
 
-/* ---------- procedo cuando registro está disponible ---------- */
-async function proceedWithRegistro(reg){
-  // normalize safe
-  const registro = { dias: Array.isArray(reg.dias) ? reg.dias : [], sessions: Array.isArray(reg.sessions) ? reg.sessions : [], timersMeta: reg.timersMeta || {} };
+function renderTableByDate(registro, metrics, sessionsFiltered) {
+  const wrap = document.getElementById("tableByDate");
+  wrap.innerHTML = "";
+  const table = document.createElement("table");
+  table.style.width = "100%"; table.style.borderCollapse = "collapse";
+  table.innerHTML = `<thead><tr style="background:#f5f5f5"><th style="padding:8px">Fecha</th><th style="padding:8px">Tiempo acumulado</th><th style="padding:8px">Objetivo(min)</th><th style="padding:8px">Sesiones</th><th style="padding:8px">Top actividades</th></tr></thead><tbody></tbody>`;
+  const tbody = table.querySelector("tbody");
 
-  // compute metrics
-  const metrics = calcMetricsFromRegistro(registro);
+  // aggregate by date from sessionsFiltered
+  const map = {};
+  (sessionsFiltered || []).forEach(s => {
+    const k = s.dateKey || isoToDateKey(s.startTs);
+    if(!map[k]) map[k] = { dateKey:k, totalSec:0, sessions:[] };
+    map[k].totalSec += (Number(s.durationSec) || 0);
+    map[k].sessions.push(s);
+  });
 
-  // render into existing UI (rebuild base UI to ensure controls exist)
+  const dates = Object.keys(map).sort();
+  dates.forEach(dk => {
+    const pd = map[dk];
+    // compute objective for this calendar date
+    const timersSeen = new Set();
+    pd.sessions.forEach(s => { if (s.timerId) timersSeen.add(s.timerId); });
+    let objMin = 0;
+    timersSeen.forEach(tid => {
+      if (registro.timersMeta && registro.timersMeta[tid] && registro.timersMeta[tid].target) objMin += Number(registro.timersMeta[tid].target);
+      else {
+        const f = pd.sessions.find(x => x.timerId === tid && x.objetivoMin);
+        if (f && f.objetivoMin) objMin += Number(f.objetivoMin);
+      }
+    });
+
+    const perAct = {};
+    pd.sessions.forEach(s => { const n = s.name || s.timerId || "sin_nombre"; perAct[n] = (perAct[n]||0) + (Number(s.durationSec)||0); });
+    const topActs = Object.entries(perAct).sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>`${x[0]} (${secsToHHMMSS(x[1])})`).join(", ");
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td style="padding:8px;border-bottom:1px solid #eee">${dk}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee">${secsToHHMMSS(pd.totalSec)}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee">${objMin}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee">${pd.sessions.length}</td>
+      <td style="padding:8px;border-bottom:1px solid #eee">${escapeHtml(topActs)}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  wrap.appendChild(table);
+}
+
+/* ---------- main render (exposed) ---------- */
+export async function renderStatsGeneral() {
+  await ensureChartJs();
   const root = document.getElementById("statsGeneralEmbed");
+  if (!root) { console.error("No existe #statsGeneralEmbed"); return; }
+
+  // Build UI skeleton first
   buildBaseUI(root);
 
-  // populate summary
-  document.getElementById("totalAccum").textContent = `Tiempo total acumulado: ${secsToHHMMSS(metrics.totalAccumulatedSec)}`;
-  document.getElementById("totalDias").textContent = `Número de días totales transcurridos: ${metrics.numDias}`;
-  document.getElementById("totalFechas").textContent = `Número de fechas totales transcurridas: ${metrics.numFechas}`;
-  document.getElementById("mediaSesionText").textContent = secsToHHMMSS(metrics.mediaPorSesion);
-  document.getElementById("mediaTurnoText").textContent = secsToHHMMSS(metrics.mediaPorTurno);
-  document.getElementById("diasExitososText").textContent = metrics.diasExitososCount;
-  document.getElementById("maxRachaText").textContent = metrics.maxRacha;
+  // Try to get registroProcesado now (mode: only on enter)
+  function tryProceed(reg) {
+    try {
+      const registro = normalizeRegistro(reg);
+      const metrics = computeMetrics(registro);
 
-  // build checklist and wire controls
-  buildDaysChecklist(registro.dias || []);
+      // fill summary
+      document.getElementById("totalAccum").textContent = `Tiempo total acumulado: ${secsToHHMMSS(metrics.totalAccumulatedSec)}`;
+      document.getElementById("totalDias").textContent = `Número de días totales transcurridos: ${metrics.numDias}`;
+      document.getElementById("totalFechas").textContent = `Número de fechas totales transcurridas: ${metrics.numFechas}`;
+      document.getElementById("mediaSesionText").textContent = secsToHHMMSS(metrics.mediaPorSesion);
+      document.getElementById("mediaTurnoText").textContent = secsToHHMMSS(metrics.mediaPorTurno);
+      document.getElementById("diasExitososText").textContent = metrics.diasExitososCount;
+      document.getElementById("maxRachaText").textContent = metrics.maxRacha;
 
-  // date inputs default: first..last
-  const dateKeys = Object.keys(metrics.perDate || {}).sort();
-  if(dateKeys.length){
-    document.getElementById("filterDateFrom").value = dateKeys[0];
-    document.getElementById("filterDateTo").value = dateKeys[dateKeys.length-1];
-  } else {
-    const t = new Date().toISOString().slice(0,10);
-    document.getElementById("filterDateFrom").value = t;
-    document.getElementById("filterDateTo").value = t;
-  }
+      // build checklist
+      buildDaysChecklist(registro.dias || []);
 
-  // wire buttons
-  document.getElementById("applyDateBtn").onclick = () => updateViews();
-  document.getElementById("clearDateBtn").onclick = () => { document.getElementById("filterDateFrom").value=""; document.getElementById("filterDateTo").value=""; updateViews(); };
-  document.getElementById("todayBtn").onclick = () => { const t = new Date().toISOString().slice(0,10); document.getElementById("filterDateFrom").value=t; document.getElementById("filterDateTo").value=t; updateViews(); };
-  document.getElementById("thisWeekBtn").onclick = () => {
-    const now = new Date(); const day = now.getDay();
-    const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-    const monday = new Date(now.setDate(diff)); const sunday = new Date(monday); sunday.setDate(monday.getDate()+6);
-    document.getElementById("filterDateFrom").value = monday.toISOString().slice(0,10);
-    document.getElementById("filterDateTo").value = sunday.toISOString().slice(0,10);
-    updateViews();
-  };
-  document.getElementById("thisMonthBtn").onclick = () => {
-    const now = new Date(); const first = new Date(now.getFullYear(), now.getMonth(), 1); const last = new Date(now.getFullYear(), now.getMonth()+1, 0);
-    document.getElementById("filterDateFrom").value = first.toISOString().slice(0,10);
-    document.getElementById("filterDateTo").value = last.toISOString().slice(0,10);
-    updateViews();
-  };
-
-  document.getElementById("exportCsvBtn").onclick = () => exportCsvFiltered(registro, metrics);
-
-  // initial draw
-  updateViews();
-
-  /* ---------- nested helpers ---------- */
-  function getSelectedDaySet(){ return new Set(getSelectedDays().map(x=>Number(x))); }
-
-  function updateViews(){
-    const selDays = getSelectedDaySet();
-    const dr = getDateRange();
-    const sessionsFiltered = registro.sessions.filter(s => {
-      const okDay = (selDays.size === 0) ? true : (s.dia !== null && selDays.has(Number(s.dia)));
-      const okDate = (() => {
-        if(!dr) return true;
-        const d = new Date(s.dateKey + "T00:00:00");
-        if(dr.from && d < dr.from) return false;
-        if(dr.to && d > dr.to) return false;
-        return true;
-      })();
-      return okDay && okDate;
-    });
-
-    // summary for filtered
-    const totalSecFiltered = sessionsFiltered.reduce((a,b)=>a + (Number(b.durationSec)||0), 0);
-    const sessionsCount = sessionsFiltered.length;
-    const avgPerSession = sessionsCount ? Math.round(totalSecFiltered / sessionsCount) : 0;
-    document.getElementById("mediaSesionText").textContent = secsToHHMMSS(avgPerSession);
-    document.getElementById("mediaTurnoText").textContent = secsToHHMMSS(avgPerSession);
-
-    // dias exitosos en filtro (work-day)
-    const diasExitososFiltrados = Object.values(metrics.perDia).filter(d => {
-      if(d.dia === null) return false;
-      if(selDays.size && !selDays.has(Number(d.dia))) return false;
-      if(dr && dr.from && dr.to){
-        const intersect = (d.dateKeys || []).some(k => { const dd = new Date(k + "T00:00:00"); return dd >= dr.from && dd <= dr.to; });
-        if(!intersect) return false;
+      // set date inputs default range (first..last)
+      const dateKeys = Object.keys(metrics.perDate || {}).sort();
+      if (dateKeys.length) {
+        document.getElementById("filterDateFrom").value = dateKeys[0];
+        document.getElementById("filterDateTo").value = dateKeys[dateKeys.length - 1];
+      } else {
+        const t = new Date().toISOString().slice(0,10);
+        document.getElementById("filterDateFrom").value = t;
+        document.getElementById("filterDateTo").value = t;
       }
-      return (d.objetivoSecTotal && d.totalSec >= d.objetivoSecTotal);
-    }).length;
-    document.getElementById("diasExitososText").textContent = diasExitososFiltrados;
 
-    // render tables
-    renderTableByDay(registro, metrics, sessionsFiltered);
-    renderTableByDate(registro, metrics, sessionsFiltered);
+      // wire buttons
+      document.getElementById("applyDateBtn").onclick = () => updateViews();
+      document.getElementById("clearDateBtn").onclick = () => { document.getElementById("filterDateFrom").value=""; document.getElementById("filterDateTo").value=""; updateViews(); };
+      document.getElementById("todayBtn").onclick = () => { const t = new Date().toISOString().slice(0,10); document.getElementById("filterDateFrom").value=t; document.getElementById("filterDateTo").value=t; updateViews(); };
+      document.getElementById("thisWeekBtn").onclick = () => {
+        const now = new Date(); const day = now.getDay();
+        const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+        const monday = new Date(now.setDate(diff)); const sunday = new Date(monday); sunday.setDate(monday.getDate()+6);
+        document.getElementById("filterDateFrom").value = monday.toISOString().slice(0,10);
+        document.getElementById("filterDateTo").value = sunday.toISOString().slice(0,10);
+        updateViews();
+      };
+      document.getElementById("thisMonthBtn").onclick = () => {
+        const now = new Date(); const first = new Date(now.getFullYear(), now.getMonth(), 1); const last = new Date(now.getFullYear(), now.getMonth()+1, 0);
+        document.getElementById("filterDateFrom").value = first.toISOString().slice(0,10);
+        document.getElementById("filterDateTo").value = last.toISOString().slice(0,10);
+        updateViews();
+      };
 
-    // charts
-    renderCharts(metrics, registro, sessionsFiltered);
-  }
+      document.getElementById("exportCsvBtn").onclick = () => exportCsvFiltered(registro);
 
-  function renderTableByDay(reg, metrics, sessionsFiltered){
-    const wrap = document.getElementById("tableByDay"); wrap.innerHTML = "";
-    const tbl = document.createElement("table"); tbl.style.width="100%"; tbl.style.borderCollapse="collapse";
-    tbl.innerHTML = `<thead><tr style="background:#f9f9f9"><th style="padding:8px">Día</th><th style="padding:8px">Fechas</th><th style="padding:8px">Tiempo acumulado</th><th style="padding:8px">Objetivo (min)</th><th style="padding:8px">Restante</th><th style="padding:8px">Sesiones</th><th style="padding:8px">Éxito</th></tr></thead><tbody></tbody>`;
-    const tbody = tbl.querySelector("tbody");
-    (reg.dias || []).slice().sort((a,b)=>a.dia-b.dia).forEach(d=>{
-      const pd = metrics.perDia[d.dia] || { totalSec:0, sessions:[], objetivosMinTotal:0, tiempoRestanteSec:0, exitoso:false, dateKeys: d.dateKeys || [] };
-      const tr = document.createElement("tr");
-      tr.innerHTML = `<td style="padding:8px;border-bottom:1px solid #eee">${d.dia}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee">${(d.dateKeys||[]).join(", ")}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee">${secsToHHMMSS(pd.totalSec||0)}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee">${pd.objetivosMinTotal||0}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee">${secsToHHMMSS(pd.tiempoRestanteSec||0)}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee">${(pd.sessions && pd.sessions.length) || 0}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee">${pd.exitoso ? "✅" : "—"}</td>`;
-      tbody.appendChild(tr);
-    });
-    wrap.appendChild(tbl);
-  }
+      // initial draw
+      updateViews();
 
-  function renderTableByDate(reg, metrics, sessionsFiltered){
-    const wrap = document.getElementById("tableByDate"); wrap.innerHTML = "";
-    const tbl = document.createElement("table"); tbl.style.width="100%"; tbl.style.borderCollapse="collapse";
-    tbl.innerHTML = `<thead><tr style="background:#f9f9f9"><th style="padding:8px">Fecha</th><th style="padding:8px">Tiempo acumulado</th><th style="padding:8px">Objetivo (min)</th><th style="padding:8px">Sesiones</th><th style="padding:8px">Top actividades</th></tr></thead><tbody></tbody>`;
-    const tbody = tbl.querySelector("tbody");
-    // aggregate by date from sessionsFiltered
-    const map = {};
-    (sessionsFiltered || []).forEach(s => {
-      const k = s.dateKey || dateKeyFromIso(s.startTs);
-      if(!map[k]) map[k] = { dateKey:k, totalSec:0, sessions:[] };
-      map[k].totalSec += (Number(s.durationSec)||0);
-      map[k].sessions.push(s);
-    });
-    const dates = Object.keys(map).sort();
-    dates.forEach(dk => {
-      const pd = map[dk];
-      // compute objetivos for this date
-      const timersSeen = new Set();
-      pd.sessions.forEach(s => { if(s.timerId) timersSeen.add(s.timerId); });
-      let objMin = 0;
-      timersSeen.forEach(tid => {
-        if(reg.timersMeta && reg.timersMeta[tid] && reg.timersMeta[tid].target) objMin += Number(reg.timersMeta[tid].target);
-        else {
-          const f = pd.sessions.find(x => x.timerId === tid && x.objetivoMin);
-          if(f && f.objetivoMin) objMin += Number(f.objetivoMin);
+      /* nested helpers */
+      function getSelectedDaySet(){ return new Set(getSelectedDays().map(x=>Number(x))); }
+
+      function updateViews(){
+        const selDays = getSelectedDaySet();
+        const dr = getDateRange();
+        const sessionsFiltered = (registro.sessions || []).filter(s => {
+          const okDay = (selDays.size === 0) ? true : (s.dia !== null && selDays.has(Number(s.dia)));
+          const okDate = (() => {
+            if(!dr) return true;
+            const d = new Date((s.dateKey || isoToDateKey(s.startTs)) + "T00:00:00");
+            if(dr.from && d < dr.from) return false;
+            if(dr.to && d > dr.to) return false;
+            return true;
+          })();
+          return okDay && okDate;
+        });
+
+        // update filtered metrics summary
+        const totalSecFiltered = sessionsFiltered.reduce((a,b)=>a + (Number(b.durationSec)||0), 0);
+        const sessionsCount = sessionsFiltered.length;
+        const avgPerSession = sessionsCount ? Math.round(totalSecFiltered / sessionsCount) : 0;
+        document.getElementById("mediaSesionText").textContent = secsToHHMMSS(avgPerSession);
+        document.getElementById("mediaTurnoText").textContent = secsToHHMMSS(avgPerSession);
+
+        // dias exitosos filtrados (work-day)
+        const diasExitososFiltrados = Object.values(metrics.perDia).filter(d => {
+          if (d.dia === null) return false;
+          if (selDays.size && !selDays.has(Number(d.dia))) return false;
+          if (dr && dr.from && dr.to) {
+            const intersect = (d.dateKeys || []).some(k => { const dd = new Date(k + "T00:00:00"); return dd >= dr.from && dd <= dr.to; });
+            if (!intersect) return false;
+          }
+          return (d.objetivoSecTotal && d.totalSec >= d.objetivoSecTotal);
+        }).length;
+        document.getElementById("diasExitososText").textContent = diasExitososFiltrados;
+
+        // tables
+        renderTableByDay(registro, metrics, sessionsFiltered);
+        renderTableByDate(registro, metrics, sessionsFiltered);
+
+        // charts
+        renderCharts(metrics, registro, sessionsFiltered);
+      }
+
+    } catch (err) {
+      console.error("Error procesando registro para estadísticas:", err);
+      root.innerHTML = `<div style="padding:12px; background:#fff; border-radius:8px;">Error calculando estadísticas: ${escapeHtml(err.message || String(err))}</div>`;
+    }
+  } // tryProceed
+
+  // If registroProcesado present -> proceed. Otherwise show message and offer to open Registro or force process if function available.
+  if (window.registroProcesado) {
+    // Precompute some perDate maps into metrics object for chart convenience
+    const reg = normalizeRegistro(window.registroProcesado);
+    // compute perDate caches used in charts
+    const metrics = computeMetrics(reg);
+    // attach caches to metrics for later use
+    metrics.perDate = {}; metrics.perDateObjetivos = {};
+    Object.entries(metrics.perDateObjetivos || {}).forEach(()=>{}); // noop to avoid lint
+    // Now call tryProceed with full registro (we will compute metrics again inside)
+    tryProceed(window.registroProcesado);
+  } else {
+    // show helpful panel
+    root.innerHTML = `
+      <div style="padding:12px; background:#fff; border-radius:8px;">
+        <div style="font-weight:700; margin-bottom:8px;">No se encontraron datos procesados (window.registroProcesado).</div>
+        <div style="margin-bottom:8px;">La sección Registro de eventos procesa los eventos y expone <code>window.registroProcesado</code>. Abre "Registro de eventos" y pulsa "Refrescar ahora", luego vuelve aquí.</div>
+        <div style="display:flex; gap:8px;"><button id="goRegistroBtn">Abrir Registro de eventos</button><button id="tryForceBtn">Intentar forzar procesado</button></div>
+      </div>
+    `;
+    document.getElementById("goRegistroBtn").onclick = () => { if (typeof openSection === "function") openSection('registroEventos'); else alert("Abre manualmente Registro de eventos."); };
+    document.getElementById("tryForceBtn").onclick = () => {
+      const possible = [window.renderRegistroEventos, window.procesarRegistro, window.buildRegistroProcesado];
+      const fn = possible.find(f => typeof f === "function");
+      if (fn) {
+        try {
+          // try with silent param
+          try { fn(true); } catch(e) { fn(); }
+          setTimeout(()=> { if (window.registroProcesado) { renderStatsGeneral(); } else alert("Procesado intentado pero registroProcesado sigue sin existir. Abre Registro manualmente."); }, 800);
+        } catch (err) {
+          alert("No se pudo forzar procesado: " + (err.message || err));
         }
-      });
-      // top activities
-      const perAct = {};
-      pd.sessions.forEach(s => { const n = s.name || s.timerId || "sin_nombre"; perAct[n] = (perAct[n]||0) + (Number(s.durationSec)||0); });
-      const topActs = Object.entries(perAct).sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>`${x[0]} (${secsToHHMMSS(x[1])})`).join(", ");
-      const tr = document.createElement("tr");
-      tr.innerHTML = `<td style="padding:8px;border-bottom:1px solid #eee">${dk}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee">${secsToHHMMSS(pd.totalSec)}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee">${objMin}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee">${pd.sessions.length}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee">${escapeHtml(topActs)}</td>`;
-      tbody.appendChild(tr);
-    });
-    wrap.appendChild(tbl);
-  }
-} // end proceedWithRegistro
+      } else {
+        alert("No se detectó función de procesado en la página. Abre Registro y pulsa 'Refrescar ahora'.");
+      }
+    };
 
-// expose for module import
-if(typeof window !== "undefined") window.renderStatsGeneral = window.renderStatsGeneral || renderStatsGeneral;
+    // Also listen once for registroProcesadoReady event (if index dispatches it)
+    const handler = ev => {
+      try {
+        if (ev && ev.detail) tryProceed(ev.detail);
+        else if (window.registroProcesado) tryProceed(window.registroProcesado);
+      } catch (e) { console.error(e); }
+      window.removeEventListener('registroProcesadoReady', handler);
+    };
+    window.addEventListener('registroProcesadoReady', handler, { once: true });
+  }
+}
+
+// expose for non-module usage fallback
+if (typeof window !== "undefined") window.renderStatsGeneral = window.renderStatsGeneral || renderStatsGeneral;
 export { renderStatsGeneral };
+
 
 
