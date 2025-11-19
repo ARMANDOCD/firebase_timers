@@ -567,29 +567,46 @@ window.editTimer = async i => {
 /* -------- TIMERS acciones -------- */
 
 window.toggleTimer = async i => {
-  if(!dayStarted) return alert("Primero inicia el día.");
-  timers[i].running = !timers[i].running;
-  await save();
+  if (!dayStarted) return alert("Primero inicia el día.");
+  
+  const t = timers[i];
+  const timerId = t.createdAt;
 
-  const timerId = timers[i].createdAt;
-  if(timers[i].running){
-    // inicio
+  if (!t.running) {
+    // === iniciar ===
+    t.running = true;
+    t.startedAt = new Date().toISOString();   // 🔥 Se registra el momento exacto del inicio
+    await save();
+
     logEvento(currentUid, "timer_iniciado", {
       timerId,
-      name: timers[i].name,
-      elapsedAntes: timers[i].elapsed
+      name: t.name,
+      elapsedAntes: t.elapsed
     });
+
   } else {
-    // pausa
+    // === pausar ===
+    const nowIso = new Date().toISOString();
+
+    if (t.startedAt) {
+      const deltaSec = Math.floor((new Date(nowIso) - new Date(t.startedAt)) / 1000);
+      t.elapsed += Math.max(0, deltaSec);     // 🔥 Se calcula el tiempo REAL
+      delete t.startedAt;
+    }
+
+    t.running = false;
+    await save();
+
     logEvento(currentUid, "timer_pausado", {
       timerId,
-      name: timers[i].name,
-      elapsed: timers[i].elapsed
+      name: t.name,
+      elapsed: t.elapsed
     });
   }
 
   renderTimers();
 };
+
 
 window.resetTimer = async i => {
   const timerId = timers[i].createdAt;
@@ -1032,6 +1049,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
