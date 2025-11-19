@@ -625,49 +625,30 @@ window.deleteTimer = async i => {
 
 /* -------- TICKER: aumenta elapsed cuando running -------- */
 
-setInterval(() => {
-  let changed = false;
-
-  timers.forEach(t => {
-    if (!t.running) return;
-
-    // 1) Calculamos tiempo real transcurrido en ms
-    const now = performance.now();
-
-    if (t.startMs == null) {
-      // Primera vez que inicia esta sesión
-      t.startMs = now;
-      t.baseMs = t.baseMs || 0;
-    }
-
-    // 2) Calcular tiempo exacto acumulado
-    t.acumuladoMs = t.baseMs + (now - t.startMs);
-
-    // 3) Verificar objetivo
-    const elapsedSec = Math.floor(t.acumuladoMs / 1000);
-
-    if (elapsedSec >= t.target * 60 && !t.completed) {
-      t.completed = true;
-
-      const id = t.createdAt;
-      if (!loggedCompletions.has(id)) {
-        loggedCompletions.add(id);
-        logEvento(currentUid, "timer_completado", {
-          timerId: id,
-          name: t.name,
-          elapsed: elapsedSec,
-          target: t.target
-        });
+setInterval(()=>{
+  let changed=false;
+  timers.forEach(t=>{
+    if(t.running){
+      t.elapsed++;
+      // detectar completado y loguear solo una vez por timer (por sesión)
+      if(t.elapsed >= t.target*60 && !t.completed){
+        t.completed = true;
+        const id = t.createdAt;
+        if(!loggedCompletions.has(id)){
+          loggedCompletions.add(id);
+          logEvento(currentUid, "timer_completado", {
+            timerId: id,
+            name: t.name,
+            elapsed: t.elapsed,
+            target: t.target
+          });
+        }
       }
+      changed=true;
     }
-
-    changed = true;
   });
-
-  if (changed) renderTimers();
-}, 200); // refresca cada 200ms, NO cuenta tiempo
-
-
+  if(changed) renderTimers();
+},1000);
 
 setInterval(()=>save(),5000);
 
@@ -925,15 +906,13 @@ async function renderRegistroEventos(){
     const startElapsed = startEv.elapsedAntes !== undefined ? startEv.elapsedAntes : (startEv.elapsed || null);
     const endElapsed = endEv.elapsed !== undefined ? endEv.elapsed : (endEv.elapsedAntes !== undefined ? endEv.elapsedAntes : null);
     let durationSec;
-    // ⏱️ SIEMPRE calcular duración usando timestamps reales
-let durationSec =
-  Math.max(0, (new Date(endTs) - new Date(startTs)) / 1000);
-
-  }
-    //durationSec = Number(durationSec.toFixed(3)); // precisión milisegundos, sin redondeo agresivo
-    
+    if(typeof startElapsed === "number" && typeof endElapsed === "number"){
+      durationSec = Math.max(0, Math.round(endElapsed - startElapsed));
+    } else {
+      durationSec = Math.max(0, Math.round((new Date(endTs) - new Date(startTs))/1000));
+    }
     // determine dia based on 'dias' intervals
-        let diaNum = null;
+    let diaNum = null;
     for(const d of dias){
       const s = new Date(d.inicio);
       const e = d.fin ? new Date(d.fin) : null;
@@ -1077,6 +1056,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
