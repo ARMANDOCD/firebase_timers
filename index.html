@@ -906,11 +906,12 @@ async function renderRegistroEventos(){
     const startElapsed = startEv.elapsedAntes !== undefined ? startEv.elapsedAntes : (startEv.elapsed || null);
     const endElapsed = endEv.elapsed !== undefined ? endEv.elapsed : (endEv.elapsedAntes !== undefined ? endEv.elapsedAntes : null);
     let durationSec;
-    if(typeof startElapsed === "number" && typeof endElapsed === "number"){
-      durationSec = Math.max(0, Math.round((endElapsed - startElapsed)));
-    } else {
-      durationSec = Math.max(0, Math.floor((new Date(endTs) - new Date(startTs)) / 1000));
-    }
+    // ⏱️ SIEMPRE calcular duración usando timestamps reales
+durationSec = Math.max(
+  0,
+  Math.floor((new Date(endTs) - new Date(startTs)) / 1000)
+);
+
     //durationSec = Number(durationSec.toFixed(3)); // precisión milisegundos, sin redondeo agresivo
     
     // determine dia based on 'dias' intervals
@@ -1058,6 +1059,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
