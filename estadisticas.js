@@ -124,17 +124,12 @@ Object.values(timerTargets).forEach(target => {
   // per-date objetivos
   const perDateObjetivos = {};
   Object.keys(perDate).forEach(dk => {
-    const timersSeen = new Set();
-    perDate[dk].sessions.forEach(s => { if (s.timerId) timersSeen.add(s.timerId); });
     let objMin = 0;
-    timersSeen.forEach(tid => {
-      if (timerTargets[tid] != null) objMin += timerTargets[tid];
-      else {
-        const f = perDate[dk].sessions.find(x => x.timerId === tid && x.objetivoMin);
-        if (f && f.objetivoMin) objMin += Number(f.objetivoMin);
-      }
-    });
-    perDateObjetivos[dk] = objMin;
+Object.values(registro.timersMeta || {}).forEach(t => {
+    if (t && t.target != null)
+        objMin += Number(t.target);
+});
+
   });
 
   // compute max racha of successful dates (calendar)
@@ -607,6 +602,7 @@ if (typeof window !== "undefined") window.renderStatsGeneral = window.renderStat
 
 // ❌ Línea problemática eliminada:
 // export { renderStatsGeneral };
+
 
 
 
