@@ -123,6 +123,36 @@
     text-align: center;
   }
 
+  /* Estilos tabla de registro */
+  #registroTable {
+    width: 95%;
+    max-width: 1100px;
+    border-collapse: collapse;
+    margin-top: 12px;
+    background: #f7f7f7;
+    color: #111;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  #registroTable thead th {
+    background: #3b5dd1;
+    color: #fff;
+    padding: 10px;
+    text-align: left;
+    font-weight: 600;
+  }
+  #registroTable tbody td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #e0e0e0;
+    font-size: 0.95rem;
+  }
+  .small { font-size: 0.9rem; color:#666; }
+  #registroControls { margin: 10px 0; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  #registroWrapper { width: 100%; display:flex; flex-direction:column; align-items:center; }
+
+  /* Una fila resaltada para eventos "sin día" */
+  .no-day { background: #fff3cd !important; }
+
 </style>
 </head>
 
@@ -135,6 +165,8 @@
   <button onclick="openSection('mainPage')">🏠 Cronómetros</button>
   <button onclick="openSection('statsGeneral')">📊 Estadísticas Generales</button>
   <button onclick="openSection('statsPersonal')">👤 Estadísticas Individuales</button>
+  <!-- NUEVO BOTÓN -->
+  <button onclick="openSection('registroEventos')">📜 Registro de eventos</button>
 </div>
 
 
@@ -194,6 +226,35 @@
   <div id="statsPersonalEmbed"></div>
 </section>
 
+<!-- 🔵 REGISTRO DE EVENTOS -->
+<section id="registroEventos" class="hidden">
+  <h2>📜 Registro de eventos (historial)</h2>
+
+  <div id="registroWrapper">
+    <div id="registroControls">
+      <span class="small">Se muestran eventos sincronizados desde Firebase y asignados a días de trabajo calculados a partir de <b>dia_iniciado</b> / <b>dia_finalizado</b>.</span>
+      <button id="refreshRegistroBtn">🔁 Refrescar ahora</button>
+    </div>
+
+    <table id="registroTable">
+      <thead>
+        <tr>
+          <th>Día</th>
+          <th>Cronómetro</th>
+          <th>Acción</th>
+          <th>Marca</th>
+          <th>Fecha y hora</th>
+          <th>Objetivo (min)</th>
+          <th>Creado</th>
+        </tr>
+      </thead>
+      <tbody id="registroBody">
+        <!-- filas generadas dinámicamente -->
+      </tbody>
+    </table>
+  </div>
+</section>
+
 
 
 <!-- 🔵 SCRIPT -->
@@ -206,7 +267,9 @@ import {
   ref,
   set,
   onValue,
-  push
+  push,
+  get,
+  child
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 import {
   getAuth,
@@ -269,6 +332,10 @@ onAuthStateChanged(auth, user => {
     // referencia al diaActual (tu estructura real)
     dbRef = ref(db, `usuarios/${user.uid}/cronometros/diaActual`);
     listen();
+
+    // iniciar escucha del historial de eventos en la sección registro (se activará en renderRegistroEventos)
+    // pero podemos preparar el ref
+    eventosRefGlobal = ref(db, `usuarios/${user.uid}/historialEventos`);
 
   } else {
 
@@ -334,24 +401,37 @@ async function logEvento(uid, tipo, dataExtra = {}) {
 
 
 /* -------- UTILIDADES -------- */
-function formatTime(s){
+function formatTimeFromSeconds(s){
+  if(s == null || s === undefined) return "";
+  s = Number(s);
+  if(isNaN(s)) return "";
   const h = String(Math.floor(s/3600)).padStart(2,"0");
   const m = String(Math.floor((s%3600)/60)).padStart(2,"0");
   const s2 = String(s%60).padStart(2,"0");
   return `${h}:${m}:${s2}`;
 }
 
+function formatLocal(ts){
+  try {
+    return new Date(ts).toLocaleString();
+  } catch(e){
+    return ts;
+  }
+}
 
 /* -------- NAV SECTIONS -------- */
 window.openSection = function(sectionId){
   document.getElementById("mainPage").classList.add("hidden");
   document.getElementById("statsGeneral").classList.add("hidden");
   document.getElementById("statsPersonal").classList.add("hidden");
+  document.getElementById("registroEventos").classList.add("hidden");
 
   document.getElementById(sectionId).classList.remove("hidden");
 
   if(sectionId === "statsGeneral"){
     import("./estadisticas.js").then(mod => mod.renderStatsGeneral());
+  } else if(sectionId === "registroEventos"){
+    renderRegistroEventos();
   }
 };
 
@@ -440,7 +520,7 @@ function renderTimers(){
 
     div.innerHTML = `
       <h3>${t.name}</h3>
-      <p><span>${formatTime(t.elapsed)}</span></p>
+      <p><span>${formatTimeFromSeconds(t.elapsed)}</span></p>
       <p>Objetivo: ${t.target} min</p>
       <p>Progreso específico: ${pctObj}%</p>
       <p>Progreso general: ${pctTotal}%</p>
@@ -655,6 +735,204 @@ document.getElementById("endDayBtn").onclick = async () => {
 document.getElementById("addTimerBtn").onclick = () =>
   document.getElementById("formSection").classList.toggle("hidden");
 
+
+/* =======================
+   ===== REGISTRO UI =====
+   ======================= */
+
+let eventosRefGlobal = null; // inicializado cuando hay user
+let lastEventosListener = null; // para desconectar si es necesario
+
+document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEventos();
+
+/**
+ * renderRegistroEventos:
+ * - lee todos los eventos desde usuarios/{uid}/historialEventos
+ * - construye intervalos de días a partir de dia_iniciado/dia_finalizado (en pares)
+ * - asigna cada evento a su día correspondiente comparando timestamps
+ * - genera la tabla
+ */
+async function renderRegistroEventos(){
+
+  if(!currentUid){
+    alert("Inicia sesión para ver el registro de eventos.");
+    return;
+  }
+
+  // referencia al historial completo
+  const eventosRef = ref(db, `usuarios/${currentUid}/historialEventos`);
+
+  // Escucha en tiempo real y re-render cada vez que cambie
+  if(lastEventosListener){
+    // no hay handle de "off" fácil con onValue si no lo guardamos, pero onValue devuelve función de cancelación: 
+    // en modular v11 onValue devuelve función de unsubscribe
+    lastEventosListener(); // desconecta la escucha anterior
+    lastEventosListener = null;
+  }
+
+  lastEventosListener = onValue(eventosRef, snap => {
+    const raw = snap.val() || {};
+    // raw tiene keys pushId: eventoObject
+    const eventosArr = Object.entries(raw).map(([key,val]) => ({ id:key, ...val }));
+    // ordenar por timestamp asc
+    eventosArr.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    // construir mapa por timerId de metadatos (creado, objetivo, creadoAt)
+    const timersMeta = {}; // timerId -> { name, target, createdAt (timestamp string) }
+    eventosArr.forEach(ev => {
+      if(ev.tipo === "timer_creado" && ev.timerId){
+        // en timer_creado guardaste timerId == createdAt ISO; timestamp del evento es cuando lo creó
+        timersMeta[ev.timerId] = {
+          name: ev.name || ev.timerId,
+          target: ev.target || null,
+          createdAt: ev.timestamp // la fecha/hora del evento de creación
+        };
+      }
+    });
+
+    // extraer eventos dia_iniciado/dia_finalizado y emparejarlos
+    const dias = [];
+    const inicios = eventosArr.filter(e => e.tipo === "dia_iniciado");
+    const finales = eventosArr.filter(e => e.tipo === "dia_finalizado");
+
+    // Pairing: supones que vienen en orden y siempre pares (salvo un inicio sin final si día en marcha)
+    // Recorremos los inicios y buscamos el siguiente final cuyo timestamp sea posterior
+    let usedFinalIndexes = new Set();
+    inicios.forEach((inicio, idx) => {
+      // buscar primera final cuyo timestamp sea >= inicio.timestamp y que no haya sido usada
+      const inicioTs = new Date(inicio.timestamp);
+      let matchedFinal = null;
+      for(let j=0;j<finales.length;j++){
+        if(usedFinalIndexes.has(j)) continue;
+        const f = finales[j];
+        const fTs = new Date(f.timestamp);
+        if(fTs >= inicioTs){
+          matchedFinal = { event: f, index: j };
+          usedFinalIndexes.add(j);
+          break;
+        }
+      }
+      dias.push({
+        dia: dias.length + 1, // numeración creciente
+        inicio: inicio.timestamp,
+        fin: matchedFinal ? matchedFinal.event.timestamp : null,
+        rawInicioEvent: inicio,
+        rawFinEvent: matchedFinal ? matchedFinal.event : null
+      });
+    });
+
+    // Si hay finales que quedaron sin emparejar (caso raro según tu confirmación), los ignoramos
+    // Construir función para asignar un evento a un día, buscando dentro de 'dias'
+    function findDiaForTimestamp(ts){
+      const t = new Date(ts);
+      for(const d of dias){
+        const start = new Date(d.inicio);
+        const end = d.fin ? new Date(d.fin) : null;
+        if(end){
+          if(t >= start && t <= end) return d.dia;
+        } else {
+          // día en curso: t >= start
+          if(t >= start) return d.dia;
+        }
+      }
+      return null; // sin día asignado
+    }
+
+    // Filtrar solo eventos relacionados con cronómetros (o mantener todos pero marcaremos)
+    const eventosTimers = eventosArr.filter(e =>
+      e.tipo.startsWith("timer_") || e.tipo === "timer_creado" || e.tipo === "timer_editado" || e.tipo === "timer_borrado"
+    );
+
+    // Si quieres incluir también otros tipos (ej dia_iniciado/dia_finalizado) en la tabla, agrega:
+    // const eventosParaTabla = eventosArr; // pero abajo uso eventosTimers
+
+    // Para mostrar en la tabla usaremos eventosArr que contenga tanto timer events como (opcional) dia events.
+    const eventosParaTabla = eventosArr; // incluir todo, luego filtramos visualmente
+
+    // Preparamos filas
+    const filas = eventosParaTabla.map(ev => {
+      // Determinar día
+      const dia = findDiaForTimestamp(ev.timestamp);
+
+      // Intentar obtener timerId y metadata
+      const timerId = ev.timerId || (ev.timerId === undefined ? null : ev.timerId);
+      const meta = timerId && timersMeta[timerId] ? timersMeta[timerId] : null;
+
+      // Marca/elapsed: distintos nombres en dataExtra: elapsed, elapsedAntes, prevElapsed
+      let elapsedSec = null;
+      if(ev.elapsed !== undefined && ev.elapsed !== null) elapsedSec = ev.elapsed;
+      else if(ev.elapsedAntes !== undefined && ev.elapsedAntes !== null) elapsedSec = ev.elapsedAntes;
+      else if(ev.prevElapsed !== undefined && ev.prevElapsed !== null) elapsedSec = ev.prevElapsed;
+
+      // objetivo (en minutos)
+      const objetivo = meta ? meta.target : (ev.target || null);
+
+      // nombre cronómetro: preferir ev.name (algunos eventos incluyen name), sino meta.name, sino timerId
+      const nombre = ev.name || (meta ? meta.name : (timerId || ""));
+
+      return {
+        id: ev.id || `${ev.tipo}-${ev.timestamp}`,
+        dia,
+        tipo: ev.tipo,
+        nombre,
+        marca: elapsedSec,
+        marcaStr: formatTimeFromSeconds(elapsedSec),
+        timestamp: ev.timestamp,
+        objetivo,
+        creado: meta ? meta.createdAt : (ev.createdAt || ""),
+        raw: ev
+      };
+    });
+
+    // ordenar filas por timestamp asc
+    filas.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    // RENDER TABLA
+    const tbody = document.getElementById("registroBody");
+    tbody.innerHTML = "";
+
+    filas.forEach(f => {
+      const tr = document.createElement("tr");
+      if(f.dia === null) tr.classList.add("no-day");
+
+      tr.innerHTML = `
+        <td>${f.dia === null ? "<i>sin día asignado</i>" : f.dia}</td>
+        <td>${escapeHtml(f.nombre || "")}</td>
+        <td>${escapeHtml(f.tipo)}</td>
+        <td>${f.marcaStr || ""}</td>
+        <td>${formatLocal(f.timestamp)}</td>
+        <td>${f.objetivo === null || f.objetivo === undefined ? "" : f.objetivo}</td>
+        <td>${f.creado ? formatLocal(f.creado) : ""}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    // Si no hay días detectados, mostrar nota
+    if(dias.length === 0){
+      // opción: mostrar alerta o mensaje en la UI (aquí agregamos una fila)
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td colspan="7" class="small">No se detectaron pares dia_iniciado / dia_finalizado. Si existe un día en curso, aparecerá como 'en curso' (fin vacío).</td>`;
+      tbody.prepend(tr);
+    }
+
+  }); // onValue
+} // renderRegistroEventos
+
+// utilidad mínima para escapar HTML en nombres/strings
+function escapeHtml(unsafe) {
+  if(!unsafe && unsafe !== 0) return "";
+  return String(unsafe)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+/* ===========================
+   ====== FIN registro UI =====
+   =========================== */
+
 </script>
 
  
@@ -663,6 +941,8 @@ document.getElementById("addTimerBtn").onclick = () =>
 
 </body>
 </html>
+
+
 
 
 
