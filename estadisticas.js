@@ -101,16 +101,11 @@ function computeMetrics(reg) {
   });
 
   Object.values(perDia).forEach(d => {
-    const seen = new Set();
-    d.sessions.forEach(s => { if (s.timerId) seen.add(s.timerId); if (s.objetivoMin && !s.timerId) {} });
     let objMin = 0;
-    seen.forEach(tid => {
-      if (timerTargets[tid] != null) objMin += timerTargets[tid];
-      else {
-        const f = d.sessions.find(x => x.timerId === tid && x.objetivoMin);
-        if (f && f.objetivoMin) objMin += Number(f.objetivoMin);
-      }
-    });
+Object.values(timerTargets).forEach(target => {
+    objMin += Number(target || 0);
+});
+
     d.objetivosMinTotal = objMin;
     d.objetivoSecTotal = Math.round(objMin * 60);
     d.tiempoRestanteSec = Math.max(0, d.objetivoSecTotal - d.totalSec);
@@ -612,6 +607,7 @@ if (typeof window !== "undefined") window.renderStatsGeneral = window.renderStat
 
 // ❌ Línea problemática eliminada:
 // export { renderStatsGeneral };
+
 
 
 
