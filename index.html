@@ -479,20 +479,22 @@ document.getElementById("createTimerBtn").onclick = async () => {
 
 
 /* -------- RENDER -------- */
-function renderTimers(){
-
+function renderTimers() {
   const container = document.getElementById("timers-container");
-  container.innerHTML="";
+  container.innerHTML = "";
 
-  const totalTargetSeconds = timers.reduce((sum,t)=>sum+t.target*60,0);
-  const totalElapsedSeconds = timers.reduce((sum,t)=>sum+t.elapsed,0);
+  const totalTargetSeconds = timers.reduce((sum, t) => sum + t.target * 60, 0);
+  const totalElapsedSeconds = timers.reduce((sum, t) => {
+    let display = t.elapsed;
+    if (t.running && t.startedAt) display += Math.floor((new Date() - new Date(t.startedAt)) / 1000);
+    return sum + display;
+  }, 0);
 
   const dayInfoDiv = document.getElementById("dayInfo");
 
-  if(dayStarted){
-
+  if (dayStarted) {
     const start = new Date(dayStarted);
-    const estimatedEnd = new Date(start.getTime() + totalTargetSeconds*1000);
+    const estimatedEnd = new Date(start.getTime() + totalTargetSeconds * 1000);
     const progress = totalElapsedSeconds / totalTargetSeconds * 100 || 0;
 
     dayInfoDiv.innerHTML = `
@@ -500,33 +502,28 @@ function renderTimers(){
       <p>Hora estimada de fin: ${estimatedEnd.toLocaleString()}</p>
       <p>Progreso total: ${progress.toFixed(1)}%</p>
     `;
-
     dayInfoDiv.classList.remove("hidden");
-
   } else {
     dayInfoDiv.classList.add("hidden");
   }
 
-
-
-  timers.forEach((t,i)=>{
-
+  timers.forEach((t, i) => {
     const div = document.createElement("div");
     div.className = "timer draggable" + (t.completed ? " completed" : "");
     div.draggable = true;
 
-    const pctObj = (t.elapsed/(t.target*60)*100).toFixed(1);
-    const pctTotal = (t.elapsed/totalTargetSeconds*100).toFixed(1);
-let displayElapsed = t.elapsed;
-if (t.running && t.startedAt) {
-  displayElapsed += Math.floor(
-    (new Date() - new Date(t.startedAt)) / 1000
-  );
-}
+    // elapsed temporal
+    let displayElapsed = t.elapsed;
+    if (t.running && t.startedAt) {
+      displayElapsed += Math.floor((new Date() - new Date(t.startedAt)) / 1000);
+    }
+
+    const pctObj = ((displayElapsed / (t.target * 60)) * 100).toFixed(1);
+    const pctTotal = ((displayElapsed / totalTargetSeconds) * 100).toFixed(1);
+
     div.innerHTML = `
       <h3>${t.name}</h3>
       <p><span>${formatTimeFromSeconds(displayElapsed)}</span></p>
-
       <p>Objetivo: ${t.target} min</p>
       <p>Progreso específico: ${pctObj}%</p>
       <p>Progreso general: ${pctTotal}%</p>
@@ -547,31 +544,32 @@ if (t.running && t.startedAt) {
 }
 
 setInterval(async () => {
+  if (!timers || timers.length === 0) return;
   const now = new Date();
-
   let needsSave = false;
 
   timers.forEach(t => {
-    if(t.running && t.startedAt){
-      const deltaSec = Math.floor((now - new Date(t.startedAt)) / 1000);
-      t.elapsed = (t.elapsedAntes || 0) + deltaSec;
+    if (t.running && t.startedAt) {
+      // elapsed real hasta ahora
+      const elapsedReal = t.elapsed + Math.floor((now - new Date(t.startedAt)) / 1000);
 
-      // Marcar completado si supera objetivo
-      if(!t.completed && t.elapsed >= t.target*60){
+      // marcar completado si superó objetivo
+      if (!t.completed && elapsedReal >= t.target * 60) {
         t.completed = true;
-        logEvento(currentUid, "timer_completado", { 
-          timerId: t.createdAt, 
-          name: t.name, 
-          elapsed: t.elapsed 
-        });
         needsSave = true;
+
+        logEvento(currentUid, "timer_completado", {
+          timerId: t.createdAt,
+          name: t.name,
+          elapsed: elapsedReal
+        });
       }
     }
   });
 
-  if(needsSave) await save();
+  if (needsSave) await save();
 
-  renderTimers();
+  renderTimers(); // refresca UI cada segundo
 }, 1000);
 
 
@@ -1083,6 +1081,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
