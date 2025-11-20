@@ -515,8 +515,9 @@ function renderTimers() {
     // elapsed temporal
     let displayElapsed = t.elapsed;
     if (t.running && t.startedAt) {
-      displayElapsed += Math.floor((new Date() - new Date(t.startedAt)) / 1000);
-    }
+  displayElapsed += Math.floor((performance.now() - t.startedAt) / 1000);
+}
+
 
     const pctObj = ((displayElapsed / (t.target * 60)) * 100).toFixed(1);
     const pctTotal = ((displayElapsed / totalTargetSeconds) * 100).toFixed(1);
@@ -551,7 +552,8 @@ setInterval(async () => {
   timers.forEach(t => {
     if (t.running && t.startedAt) {
       // elapsed real hasta ahora
-      const elapsedReal = t.elapsed + Math.floor((now - new Date(t.startedAt)) / 1000);
+      const elapsedReal = t.elapsed + Math.floor((performance.now() - t.startedAt) / 1000);
+
 
       // marcar completado si superó objetivo
       if (!t.completed && elapsedReal >= t.target * 60) {
@@ -607,7 +609,9 @@ window.toggleTimer = async i => {
   if (!t.running) {
     // === iniciar ===
     t.running = true;
-    t.startedAt = new Date().toISOString();   // 🔥 Se registra el momento exacto del inicio
+    t.startedAt = performance.now();
+t.startedAtReal = new Date().toISOString(); // para logs Firebase
+
     await save();
 
     logEvento(currentUid, "timer_iniciado", {
@@ -621,9 +625,12 @@ window.toggleTimer = async i => {
     const nowIso = new Date().toISOString();
 
     if (t.startedAt) {
-      const deltaSec = Math.floor((new Date(nowIso) - new Date(t.startedAt)) / 1000);
-      t.elapsed += Math.max(0, deltaSec);     // 🔥 Se calcula el tiempo REAL
+      const deltaSec = Math.floor((performance.now() - t.startedAt) / 1000);
+t.elapsed += Math.max(0, deltaSec);
+     // 🔥 Se calcula el tiempo REAL
       delete t.startedAt;
+delete t.startedAtReal;
+
     }
 
     t.running = false;
@@ -1081,6 +1088,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
