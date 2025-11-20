@@ -1,167 +1,267 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Estadísticas</title>
-<style>
-  body {
-    font-family: 'Segoe UI', sans-serif;
-    background: #f4f5fb;
-    color: #222;
-    margin: 0;
-    padding: 0;
-  }
-  header {
-    background: #1a2f7a;
-    color: #fff;
-    padding: 15px;
-    text-align: center;
-    font-size: 1.4rem;
-    font-weight: 600;
-  }
-  .container {
-    max-width: 1100px;
-    margin: 20px auto;
-    padding: 20px;
-    background: #ffffff;
-    border-radius: 10px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-  }
-  h2 { color: #1a2f7a; }
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 15px;
-  }
-  .card {
-    background: #fff;
-    border: 1px solid #ddd;
-    padding: 15px;
-    border-radius: 10px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
-  }
-  #charts {
-    margin-top: 25px;
-  }
-  canvas {
-    width: 100% !important;
-    height: auto !important;
-  }
-  select, input {
-    padding: 6px;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-  }
-  .filters {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 20px;
-  }
-</style>
-</head>
-<body>
-<header>📊 Estadísticas de Productividad</header>
-<div class="container">
-
-  <div class="filters">
-    <select id="filterDia"></select>
-    <input type="date" id="filterFecha" />
-  </div>
-
-  <div id="resumen" class="grid"></div>
-
-  <div id="charts">
-    <canvas id="chartDia"></canvas>
-    <canvas id="chartFecha"></canvas>
-  </div>
-
-</div>
+<meta charset="UTF-8">
+<title>Estadísticas Generales</title>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body {
+  font-family: Segoe UI, sans-serif;
+  background: #ececec;
+  padding: 20px;
+}
+
+h1, h2 { color:#222; }
+.card {
+  background: white;
+  padding:15px;
+  border-radius:10px;
+  box-shadow:0 2px 6px rgba(0,0,0,0.2);
+  margin-bottom:20px;
+}
+
+#filters {
+  display:flex;
+  gap:10px;
+  margin-bottom:20px;
+}
+select { padding:6px; }
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+th, td {
+  border-bottom:1px solid #ccc;
+  padding:6px;
+}
+</style>
+</head>
+
+<body>
+<h1>📊 Estadísticas Generales</h1>
+
+<div class="card">
+  <h2>Filtros</h2>
+  <div id="filters">
+    <select id="filterDia"></select>
+    <select id="filterFecha"></select>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Resumen General</h2>
+  <div id="resumen"></div>
+</div>
+
+<div class="card">
+  <h2>Tiempo por Cronómetro</h2>
+  <canvas id="chartActividades"></canvas>
+</div>
+
+<div class="card">
+  <h2>Tiempo por Día</h2>
+  <canvas id="chartDias"></canvas>
+</div>
+
+<div class="card">
+  <h2>Sesiones de trabajo</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Actividad</th>
+        <th>Día</th>
+        <th>Fecha</th>
+        <th>Inicio</th>
+        <th>Fin</th>
+        <th>Duración</th>
+      </tr>
+    </thead>
+    <tbody id="tablaSesiones"></tbody>
+  </table>
+</div>
+
 <script>
-function leerTimersDesdeIndex() {
-  const parent = window.opener;
-  if (!parent) return {};
-  const cards = parent.document.querySelectorAll('.timer');
-  const objetivos = {};
+/* Esperamos a que index.html nos pase los datos */
+window.addEventListener("registroProcesadoReady", e => {
+    const data = e.detail;
+    iniciarEstadisticas(data);
+});
 
-  cards.forEach(card => {
-    const name = card.querySelector('h3').textContent.trim();
-    const objetivoTxt = card.querySelector('p:nth-of-type(2)').textContent;
-    const target = parseInt(objetivoTxt.replace(/\D+/g, ''));
-    objetivos[name] = target;
-  });
-  return objetivos;
+function formatSec(s){
+  const h = Math.floor(s/3600);
+  const m = Math.floor((s%3600)/60);
+  const ss = s%60;
+  return `${h}h ${m}m ${ss}s`;
 }
 
-function leerTablaRegistro() {
-  const parent = window.opener;
-  if (!parent) return [];
-  const rows = parent.document.querySelectorAll('#registroTable tbody tr');
-  const data = [];
+function iniciarEstadisticas(reg){
 
-  rows.forEach(r => {
-    const c = r.children;
-    data.push({
-      dia: c[0].innerText.trim(),
-      cronometro: c[1].innerText.trim(),
-      tipo: c[2].innerText.trim(),
-      marca: c[3].innerText.trim(),
-      fecha: c[4].innerText.trim(),
-      objetivo: c[5].innerText.trim()
+    const dias = reg.dias;
+    const sessions = reg.sessions;
+    const timersMeta = reg.timersMeta;
+
+    /* -------------------------
+       GENERAR LISTAS DE FILTRO
+    --------------------------*/
+    const filterDia = document.getElementById("filterDia");
+    const filterFecha = document.getElementById("filterFecha");
+
+    filterDia.innerHTML = `<option value="">Todos los días</option>`;
+    dias.forEach(d => {
+        filterDia.innerHTML += `<option value="${d.dia}">Día ${d.dia}</option>`;
     });
-  });
-  return data;
-}
 
-function parseSeconds(str) {
-  if (!str) return 0;
-  const p = str.split(':').map(Number);
-  return p[0]*3600 + p[1]*60 + p[2];
-}
+    const fechasUnicas = [...new Set(sessions.map(s => s.dateKey))];
+    filterFecha.innerHTML = `<option value="">Todas las fechas</option>`;
+    fechasUnicas.forEach(f => {
+        filterFecha.innerHTML += `<option value="${f}">${f}</option>`;
+    });
 
-function generarEstadisticas() {
-  const objetivos = leerTimersDesdeIndex();
-  const registros = leerTablaRegistro();
+    filterDia.onchange = () => renderTodo();
+    filterFecha.onchange = () => renderTodo();
 
-  const sesiones = {};
-  const fechas = new Set();
-  const dias = new Set();
+    function filtrarSesiones(){
+        const d = filterDia.value;
+        const f = filterFecha.value;
 
-  registros.forEach(ev => {
-    if (ev.tipo === 'timer_pausado' || ev.tipo === 'timer_completado') {
-      const seg = parseSeconds(ev.marca);
-      fechas.add(ev.fecha.split(',')[0]);
-      dias.add(ev.dia);
-
-      if (!sesiones[ev.cronometro]) sesiones[ev.cronometro] = 0;
-      sesiones[ev.cronometro] += seg;
+        return sessions.filter(s => {
+            if(d && s.dia != d) return false;
+            if(f && s.dateKey != f) return false;
+            return true;
+        });
     }
-  });
 
-  const totalTiempo = Object.values(sesiones).reduce((a,b)=>a+b,0);
-  const totalObjetivo = Object.values(objetivos).reduce((a,b)=>a + b*60, 0);
-  const pct = totalObjetivo ? (totalTiempo/totalObjetivo)*100 : 0;
+    /* ----------------------------------------
+        RENDER PRINCIPAL
+    -----------------------------------------*/
+    function renderTodo(){
+        const ss = filtrarSesiones();
 
-  document.getElementById('resumen').innerHTML = `
-    <div class="card"><h3>Tiempo total</h3><p>${(totalTiempo/3600).toFixed(2)} h</p></div>
-    <div class="card"><h3>Objetivo total</h3><p>${(totalObjetivo/3600).toFixed(2)} h</p></div>
-    <div class="card"><h3>Progreso</h3><p>${pct.toFixed(1)}%</p></div>
-    <div class="card"><h3>Nº Cronómetros</h3><p>${Object.keys(objetivos).length}</p></div>
-  `;
-
-  const ctx1 = document.getElementById('chartDia').getContext('2d');
-  new Chart(ctx1, {
-    type: 'bar',
-    data: {
-      labels: Object.keys(sesiones),
-      datasets: [{ data: Object.values(sesiones) }]
+        renderResumen(ss);
+        renderTabla(ss);
+        renderChartActividades(ss);
+        renderChartDias(ss);
     }
-  });
+
+    /* ----------------------------------------
+        RESUMEN GENERAL
+    -----------------------------------------*/
+    function renderResumen(ss){
+        const res = document.getElementById("resumen");
+
+        const total = ss.reduce((a,b)=>a+b.durationSec,0);
+        const diasSet = new Set(ss.map(s=>s.dia));
+        const fechasSet = new Set(ss.map(s=>s.dateKey));
+
+        // racha de días consecutivos
+        const sorted = [...diasSet].sort((a,b)=>a-b);
+        let maxRacha = 1, actual = 1;
+        for(let i=1;i<sorted.length;i++){
+            if(sorted[i] == sorted[i-1]+1) actual++;
+            else { maxRacha = Math.max(maxRacha, actual); actual=1; }
+        }
+        maxRacha = Math.max(maxRacha, actual);
+
+        res.innerHTML = `
+          <p><b>Tiempo total:</b> ${formatSec(total)}</p>
+          <p><b>Total días trabajados:</b> ${diasSet.size}</p>
+          <p><b>Total fechas registradas:</b> ${fechasSet.size}</p>
+          <p><b>Racha máxima:</b> ${maxRacha} días consecutivos</p>
+        `;
+    }
+
+    /* ----------------------------------------
+        TABLA DE SESIONES
+    -----------------------------------------*/
+    function renderTabla(ss){
+        const body = document.getElementById("tablaSesiones");
+        body.innerHTML = "";
+
+        ss.forEach(s => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td>${s.name}</td>
+              <td>${s.dia}</td>
+              <td>${s.dateKey}</td>
+              <td>${new Date(s.startTs).toLocaleString()}</td>
+              <td>${new Date(s.endTs).toLocaleString()}</td>
+              <td>${formatSec(s.durationSec)}</td>
+            `;
+            body.appendChild(tr);
+        });
+    }
+
+    /* ----------------------------------------
+        GRÁFICO: TIEMPO POR CRONÓMETRO
+    -----------------------------------------*/
+    let chartAct = null;
+    function renderChartActividades(ss){
+        const acumulado = {};
+        ss.forEach(s=>{
+            if(!acumulado[s.name]) acumulado[s.name]=0;
+            acumulado[s.name]+=s.durationSec;
+        });
+
+        const labels = Object.keys(acumulado);
+        const values = Object.values(acumulado);
+
+        if(chartAct) chartAct.destroy();
+        const ctx = document.getElementById("chartActividades");
+
+        chartAct = new Chart(ctx,{
+            type:"bar",
+            data:{
+                labels,
+                datasets:[{
+                    label:"Segundos trabajados",
+                    data:values
+                }]
+            }
+        });
+    }
+
+    /* ----------------------------------------
+        GRÁFICO: TIEMPO POR DÍA
+    -----------------------------------------*/
+    let chartDias = null;
+    function renderChartDias(ss){
+        const acumulado = {};
+        ss.forEach(s=>{
+            if(!acumulado[s.dia]) acumulado[s.dia]=0;
+            acumulado[s.dia]+=s.durationSec;
+        });
+
+        const labels = Object.keys(acumulado).map(d=>"Día "+d);
+        const values = Object.values(acumulado);
+
+        if(chartDias) chartDias.destroy();
+        const ctx = document.getElementById("chartDias");
+
+        chartDias = new Chart(ctx,{
+            type:"line",
+            data:{
+                labels,
+                datasets:[{
+                    label:"Segundos trabajados",
+                    data:values,
+                    tension:0.3
+                }]
+            }
+        });
+    }
+
+    renderTodo();
 }
+</script>
+</body>
+</html>
+
 
 generarEstadisticas();
 </script>
 </body>
+
 </html>
