@@ -1010,7 +1010,7 @@ let durationSec = calcDuracion(startEv, endEv);
       durationSec,
       dia: diaNum,
       dateKey,
-      objetivoMin: (objetivosPorTimer[timerId] !== undefined) ? Number(objetivosPorTimer[timerId]) : ((timersMeta && timersMeta[timerId] && (timersMeta[timerId].target !== undefined)) ? Number(timersMeta[timerId].target) : (startEv && (startEv.target !== undefined) ? Number(startEv.target) : null)),
+      objetivoMin: objetivosPorTimer[timerId] ?? null,
       closingType: closingType || (endEv && endEv.tipo) || null
     });
 
@@ -1144,6 +1144,7 @@ document.getElementById("btnEstadisticas").onclick = () => {
 
 </body>
 </html>
+
 
 
 
