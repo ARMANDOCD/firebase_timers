@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Estadísticas</title>
+<style>
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #f4f5fb;
+    color: #222;
+    margin: 0;
+    padding: 0;
+  }
+  header {
+    background: #1a2f7a;
+    color: #fff;
+    padding: 15px;
+    text-align: center;
+    font-size: 1.4rem;
+    font-weight: 600;
+  }
+  .container {
+    max-width: 1100px;
+    margin: 20px auto;
+    padding: 20px;
+    background: #ffffff;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  }
+  h2 { color: #1a2f7a; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 15px;
+  }
+  .card {
+    background: #fff;
+    border: 1px solid #ddd;
+    padding: 15px;
+    border-radius: 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  }
+  #charts {
+    margin-top: 25px;
+  }
+  canvas {
+    width: 100% !important;
+    height: auto !important;
+  }
+  select, input {
+    padding: 6px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+  }
+  .filters {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+</style>
+</head>
+<body>
+<header>📊 Estadísticas de Productividad</header>
+<div class="container">
+
+  <div class="filters">
+    <select id="filterDia"></select>
+    <input type="date" id="filterFecha" />
+  </div>
+
+  <div id="resumen" class="grid"></div>
+
+  <div id="charts">
+    <canvas id="chartDia"></canvas>
+    <canvas id="chartFecha"></canvas>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+function leerTimersDesdeIndex() {
+  const parent = window.opener;
+  if (!parent) return {};
+  const cards = parent.document.querySelectorAll('.timer');
+  const objetivos = {};
+
+  cards.forEach(card => {
+    const name = card.querySelector('h3').textContent.trim();
+    const objetivoTxt = card.querySelector('p:nth-of-type(2)').textContent;
+    const target = parseInt(objetivoTxt.replace(/\D+/g, ''));
+    objetivos[name] = target;
+  });
+  return objetivos;
+}
+
+function leerTablaRegistro() {
+  const parent = window.opener;
+  if (!parent) return [];
+  const rows = parent.document.querySelectorAll('#registroTable tbody tr');
+  const data = [];
+
+  rows.forEach(r => {
+    const c = r.children;
+    data.push({
+      dia: c[0].innerText.trim(),
+      cronometro: c[1].innerText.trim(),
+      tipo: c[2].innerText.trim(),
+      marca: c[3].innerText.trim(),
+      fecha: c[4].innerText.trim(),
+      objetivo: c[5].innerText.trim()
+    });
+  });
+  return data;
+}
+
+function parseSeconds(str) {
+  if (!str) return 0;
+  const p = str.split(':').map(Number);
+  return p[0]*3600 + p[1]*60 + p[2];
+}
+
+function generarEstadisticas() {
+  const objetivos = leerTimersDesdeIndex();
+  const registros = leerTablaRegistro();
+
+  const sesiones = {};
+  const fechas = new Set();
+  const dias = new Set();
+
+  registros.forEach(ev => {
+    if (ev.tipo === 'timer_pausado' || ev.tipo === 'timer_completado') {
+      const seg = parseSeconds(ev.marca);
+      fechas.add(ev.fecha.split(',')[0]);
+      dias.add(ev.dia);
+
+      if (!sesiones[ev.cronometro]) sesiones[ev.cronometro] = 0;
+      sesiones[ev.cronometro] += seg;
+    }
+  });
+
+  const totalTiempo = Object.values(sesiones).reduce((a,b)=>a+b,0);
+  const totalObjetivo = Object.values(objetivos).reduce((a,b)=>a + b*60, 0);
+  const pct = totalObjetivo ? (totalTiempo/totalObjetivo)*100 : 0;
+
+  document.getElementById('resumen').innerHTML = `
+    <div class="card"><h3>Tiempo total</h3><p>${(totalTiempo/3600).toFixed(2)} h</p></div>
+    <div class="card"><h3>Objetivo total</h3><p>${(totalObjetivo/3600).toFixed(2)} h</p></div>
+    <div class="card"><h3>Progreso</h3><p>${pct.toFixed(1)}%</p></div>
+    <div class="card"><h3>Nº Cronómetros</h3><p>${Object.keys(objetivos).length}</p></div>
+  `;
+
+  const ctx1 = document.getElementById('chartDia').getContext('2d');
+  new Chart(ctx1, {
+    type: 'bar',
+    data: {
+      labels: Object.keys(sesiones),
+      datasets: [{ data: Object.values(sesiones) }]
+    }
+  });
+}
+
+generarEstadisticas();
+</script>
+</body>
+</html>
