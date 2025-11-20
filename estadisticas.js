@@ -112,8 +112,9 @@ function computeMetrics(reg) {
   });
 
   Object.values(perDia).forEach(d => {
-    const seen = new Set();
-    d.sessions.forEach(s => { if (s.timerId) seen.add(s.timerId); if (s.objetivoMin && !s.timerId) {} });
+    // ⭐ NUEVO: usar todos los timers del día, no solo los iniciados
+const seen = new Set(Object.keys(timerTargets));
+ if (s.objetivoMin && !s.timerId) {} });
     let objMin = 0;
     seen.forEach(tid => {
       if (timerTargets[tid] != null) objMin += timerTargets[tid];
@@ -623,6 +624,7 @@ if (typeof window !== "undefined") window.renderStatsGeneral = window.renderStat
 
 // ❌ Línea problemática eliminada:
 // export { renderStatsGeneral };
+
 
 
 
