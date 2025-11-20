@@ -357,20 +357,36 @@ function listen() {
   onValue(dbRef, snap => {
     const data = snap.val() || {};
     timers = data.timers || [];
+
+    // Para cada timer: si estaba marcado como running en la DB y tiene startedAt absoluto,
+    // dejamos startedAt (ms) — pero añadimos sessionStartPerf para la sesión actual.
+    // Si el timer viene con startedAt como ISO string, lo transformamos a ms.
     timers.forEach(t => {
-  if (t.running) {
-    // reconstruimos solo la parte real
-    t.startedAt = performance.now(); // punto START fresco
-  }
-});
+      // si hay startedAt como ISO string (por compatibilidad), convertirlo
+      if (t.startedAt && typeof t.startedAt === "string") {
+        const ms = Date.parse(t.startedAt);
+        if (!isNaN(ms)) t.startedAt = ms;
+      }
+      if (t.running && t.startedAt) {
+        // NO sobreescribir startedAt (es el valor absoluto guardado)
+        // pero sí inicializar la referencia de rendimiento local
+        t.sessionStartPerf = performance.now();
+        // opcional: mantener startedAtReal si lo necesitas como ISO
+        // t.startedAtReal = new Date(t.startedAt).toISOString();
+      } else {
+        // limpiar cualquier campo de sesión que pudiera haberse quedado
+        if (t.sessionStartPerf !== undefined) delete t.sessionStartPerf;
+        if (t.startedAtPerf !== undefined) delete t.startedAtPerf;
+      }
+    });
 
     dayStarted = data.dayStarted || null;
     dayEnded = data.dayEnded || null;
-    // Resetear loggedCompletions si cambiaste de día (evita duplicados en sesión nueva)
     loggedCompletions.clear();
     renderTimers();
   });
 }
+
 
 async function save() {
   if(!dbRef) return;
@@ -566,14 +582,12 @@ function renderTimers() {
 
 setInterval(async () => {
   if (!timers || timers.length === 0) return;
-  const now = new Date();
   let needsSave = false;
 
   timers.forEach(t => {
     if (t.running && t.startedAt) {
-      // elapsed real hasta ahora
-      const elapsedReal = t.elapsed + Math.floor((performance.now() - t.startedAt) / 1000);
-
+      // elapsed real absoluto (Date.now)
+      const elapsedReal = (Number(t.elapsed) || 0) + Math.floor((Date.now() - t.startedAt) / 1000);
 
       // marcar completado si superó objetivo
       if (!t.completed && elapsedReal >= t.target * 60) {
@@ -593,6 +607,7 @@ setInterval(async () => {
 
   renderTimers(); // refresca UI cada segundo
 }, 1000);
+
 
 
 /* ---------- EDITAR ----------- */
@@ -629,28 +644,32 @@ window.toggleTimer = async i => {
   if (!t.running) {
     // === iniciar ===
     t.running = true;
-    t.startedAt = performance.now();
-t.startedAtReal = new Date().toISOString(); // para logs Firebase
+    // startedAt absoluto (para sincronización entre dispositivos)
+    t.startedAt = Date.now();              // ms absolute
+    // marcador local de alta precisión para esta sesión
+    t.sessionStartPerf = performance.now();
+    // opcional: startedAtReal en ISO si quieres tener la cadena
+    t.startedAtReal = new Date().toISOString();
 
     await save();
 
     logEvento(currentUid, "timer_iniciado", {
       timerId,
       name: t.name,
-      elapsedAntes: t.elapsed
+      elapsedAntes: t.elapsed // segundos ya acumulados antes de iniciar esta sesión
     });
 
   } else {
     // === pausar ===
-    const nowIso = new Date().toISOString();
-
     if (t.startedAt) {
-      const deltaSec = Math.floor((performance.now() - t.startedAt) / 1000);
-t.elapsed += Math.max(0, deltaSec);
-     // 🔥 Se calcula el tiempo REAL
-      delete t.startedAt;
-delete t.startedAtReal;
+      // calcular delta con el reloj absoluto (Date.now) — esto es lo que va a quedar en DB y eventos
+      const deltaSec = Math.floor((Date.now() - t.startedAt) / 1000);
+      t.elapsed = (Number(t.elapsed) || 0) + Math.max(0, deltaSec);
 
+      // borrar campos de ejecución
+      delete t.startedAt;
+      delete t.sessionStartPerf;
+      delete t.startedAtReal;
     }
 
     t.running = false;
@@ -659,12 +678,13 @@ delete t.startedAtReal;
     logEvento(currentUid, "timer_pausado", {
       timerId,
       name: t.name,
-      elapsed: t.elapsed
+      elapsed: t.elapsed // segundos acumulados reales
     });
   }
 
   renderTimers();
 };
+
 
 
 window.resetTimer = async i => {
@@ -1108,6 +1128,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
