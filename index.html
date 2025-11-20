@@ -607,7 +607,14 @@ window.toggleTimer = async i => {
   if (!t.running) {
     // === iniciar ===
     t.running = true;
-    t.startedAt = new Date().toISOString();   // 🔥 Se registra el momento exacto del inicio
+    t.running = true;
+t.startedAt = Date.now(); // temporal local mientras guardamos
+
+await set(ref(db, ...), {
+  ...t,
+  startedAt: serverTimestamp()  // <-- aquí se asigna el tiempo real del servidor
+});
+
     await save();
 
     logEvento(currentUid, "timer_iniciado", {
@@ -1081,6 +1088,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
