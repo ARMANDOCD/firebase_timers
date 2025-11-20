@@ -356,56 +356,89 @@ onAuthStateChanged(auth, user => {
 function listen() {
   onValue(dbRef, snap => {
     const data = snap.val() || {};
-    const incoming = data.timers || [];
+    const incoming = (data.timers || []).map(t => {
+      const copy = { ...t };
 
-incoming.forEach(remote => {
-  const local = timers.find(t => t.createdAt === remote.createdAt);
+      // asegurar updatedAt como número
+      copy.updatedAt = Number(copy.updatedAt || 0);
 
-  if (!local) {
-    // nuevo timer que no existía localmente
-    timers.push(remote);
-    return;
-  }
-
-  // si está corriendo localmente NO pisamos su estado
-  if (local.running) {
-    // mantenemos la sesión local activa
-    return;
-  }
-
-  // si no estaba corriendo, podemos reemplazarlo
-  Object.assign(local, remote);
-});
-
-
-    // Para cada timer: si estaba marcado como running en la DB y tiene startedAt absoluto,
-    // dejamos startedAt (ms) — pero añadimos sessionStartPerf para la sesión actual.
-    // Si el timer viene con startedAt como ISO string, lo transformamos a ms.
-    timers.forEach(t => {
-      // si hay startedAt como ISO string (por compatibilidad), convertirlo
-      if (t.startedAt && typeof t.startedAt === "string") {
-        const ms = Date.parse(t.startedAt);
-        if (!isNaN(ms)) t.startedAt = ms;
+      // startedAt puede venir como ISO o número
+      if (copy.startedAt && typeof copy.startedAt === "string") {
+        const ms = Date.parse(copy.startedAt);
+        copy.startedAt = isNaN(ms) ? null : ms;
       }
-      if (t.running && t.startedAt) {
-        // NO sobreescribir startedAt (es el valor absoluto guardado)
-        // pero sí inicializar la referencia de rendimiento local
+
+      return copy;
+    });
+
+    // PRIMERA CARGA LOCAL
+    if (timers.length === 0 && incoming.length > 0) {
+      timers = incoming.map(t => ({ ...t }));
+    } else {
+      // MERGE CONTROLADO POR updatedAt
+      incoming.forEach(remote => {
+        const idx = timers.findIndex(local => local.createdAt === remote.createdAt);
+
+        // si no existía local → agregar
+        if (idx === -1) {
+          timers.push({ ...remote });
+          return;
+        }
+
+        const local = timers[idx];
+        const localUpdated = Number(local.updatedAt || 0);
+        const remoteUpdated = Number(remote.updatedAt || 0);
+
+        // 1) Si el local está corriendo → NO pisamos, salvo que remoto sea más nuevo
+        if (local.running && !remote.running) {
+          if (remoteUpdated > localUpdated) {
+            // remoto más reciente → aplicar remoto pero conservar sesión local
+            const keep = { sessionStartPerf: local.sessionStartPerf };
+            timers[idx] = { ...remote, ...keep };
+          }
+          // si remoto es más viejo → ignorar
+          return;
+        }
+
+        // 2) Si remoto está corriendo y local no → aplicar remoto
+        if (!local.running && remote.running) {
+          timers[idx] = { ...remote };
+          timers[idx].sessionStartPerf = performance.now();
+          return;
+        }
+
+        // 3) Si ambos están pausados o ambos corriendo → gana el más reciente
+        if (remoteUpdated >= localUpdated) {
+          timers[idx] = { ...remote };
+
+          if (remote.running && remote.startedAt) {
+            timers[idx].sessionStartPerf = performance.now();
+          } else {
+            delete timers[idx].sessionStartPerf;
+          }
+        }
+        // si local es más nuevo → no hacer nada
+      });
+    }
+
+    // Reconstrucción adicional (normalización)
+    timers.forEach(t => {
+      if (t.running && t.startedAt && !t.sessionStartPerf) {
         t.sessionStartPerf = performance.now();
-        // opcional: mantener startedAtReal si lo necesitas como ISO
-        // t.startedAtReal = new Date(t.startedAt).toISOString();
-      } else {
-        // limpiar cualquier campo de sesión que pudiera haberse quedado
-        if (t.sessionStartPerf !== undefined) delete t.sessionStartPerf;
-        if (t.startedAtPerf !== undefined) delete t.startedAtPerf;
+      }
+      if (!t.running) {
+        delete t.sessionStartPerf;
       }
     });
 
     dayStarted = data.dayStarted || null;
     dayEnded = data.dayEnded || null;
+
     loggedCompletions.clear();
     renderTimers();
   });
 }
+
 
 
 async function save() {
@@ -694,40 +727,51 @@ window.toggleTimer = async (i) => {
     return;
   }
 
+  // marcaremos que el timer fue modificado ahora (local)
+  const markUpdated = () => {
+    t.updatedAt = Date.now();
+  };
+
   if (!t.running) {
-    // ======== INICIAR ========
+    // INICIAR
     t.running = true;
-
-    // timestamp ABSOLUTO a guardar en Firebase (sin performance)
-    t.startedAt = Date.now();
-
-    // referencia local SOLO para esta pestaña
-    t.sessionStartPerf = performance.now();
-
+    t.startedAt = Date.now();           // absoluto, para sincronización
+    t.sessionStartPerf = performance.now(); // solo UI
+    markUpdated();
     await save();
 
+    // log evento
+    logEvento(currentUid, "timer_iniciado", {
+      timerId: t.createdAt,
+      name: t.name,
+      elapsedAntes: t.elapsed
+    });
+
   } else {
-    // ======== PAUSAR ========
-
+    // PAUSAR
     if (t.startedAt) {
-      // calcular cuánto avanzó desde el último start
-      const deltaSec = Math.floor((Date.now() - t.startedAt) / 1000);
-
+      const deltaSec = Math.floor((Date.now() - Number(t.startedAt)) / 1000);
       t.elapsed = (Number(t.elapsed) || 0) + Math.max(deltaSec, 0);
     }
 
-    // detener timer
     t.running = false;
-
-    // IMPORTANTÍSIMO: NO borres t.elapsed
+    // conservar elapsed, quitar startedAt/sessionStartPerf
     t.startedAt = null;
     delete t.sessionStartPerf;
 
+    markUpdated();
     await save();
+
+    logEvento(currentUid, "timer_pausado", {
+      timerId: t.createdAt,
+      name: t.name,
+      elapsed: t.elapsed
+    });
   }
 
   renderTimers();
 };
+
 
 
 
@@ -1173,6 +1217,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
