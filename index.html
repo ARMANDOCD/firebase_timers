@@ -494,7 +494,8 @@ function renderTimers() {
   const totalTargetSeconds = timers.reduce((sum, t) => sum + t.target * 60, 0);
   const totalElapsedSeconds = timers.reduce((sum, t) => {
     let display = t.elapsed;
-    if (t.running && t.startedAt) display += Math.floor((new Date() - new Date(t.startedAt)) / 1000);
+    if (t.running && t.startedAt) display += Math.floor((performance.now() - t.startedAt) / 1000);
+
     return sum + display;
   }, 0);
 
@@ -503,7 +504,8 @@ function renderTimers() {
   if (dayStarted) {
     const start = new Date(dayStarted);
     const estimatedEnd = new Date(start.getTime() + totalTargetSeconds * 1000);
-    const progress = totalElapsedSeconds / totalTargetSeconds * 100 || 0;
+    const progress = totalTargetSeconds > 0 ? (totalElapsedSeconds / totalTargetSeconds) * 100: 0;
+
 
     dayInfoDiv.innerHTML = `
       <p>Día iniciado: ${start.toLocaleString()}</p>
@@ -1096,6 +1098,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
