@@ -106,14 +106,16 @@ function computeMetrics(reg) {
   });
 
   // compute objetivos per day: sum of timer targets used in that day
-  const timerTargets = {};
-  Object.entries(timersMeta || {}).forEach(([id, meta]) => {
-    if (meta && meta.target != null) timerTargets[id] = Number(meta.target);
-  });
+  // compute objetivos per day: sum of timer targets (todos los cronómetros)
+const timerTargets = {};
+Object.entries(timersMeta || {}).forEach(([id, meta]) => {
+  if (meta && meta.target != null) timerTargets[id] = Number(meta.target);
+});
 
-  Object.values(perDia).forEach(d => {
+// AGRUPACIÓN POR DÍA (PARTE CRÍTICA)
+Object.values(perDia).forEach(d => {
 
-  // ⭐ Aquí debe estar la línea correcta
+  // usar TODOS los cronómetros configurados, no solo los iniciados
   const seen = new Set(Object.keys(timerTargets));
 
   let objMin = 0;
@@ -124,8 +126,12 @@ function computeMetrics(reg) {
   d.objetivosMinTotal = objMin;
   d.objetivoSecTotal = Math.round(objMin * 60);
   d.tiempoRestanteSec = Math.max(0, d.objetivoSecTotal - d.totalSec);
-  d.exitoso = (d.objetivoSecTotal > 0) ? (d.totalSec >= d.objetivoSecTotal) : false;
-});
+  d.exitoso = (d.objetivoSecTotal > 0)
+    ? (d.totalSec >= d.objetivoSecTotal)
+    : false;
+
+});  // <-- ESTA ES LA ÚNICA FORMA CORRECTA DE CERRAR ESTE BLOQUE
+
 
 
   // per-date aggregation (calendar)
@@ -623,6 +629,7 @@ if (typeof window !== "undefined") window.renderStatsGeneral = window.renderStat
 
 // ❌ Línea problemática eliminada:
 // export { renderStatsGeneral };
+
 
 
 
