@@ -351,18 +351,8 @@ onAuthStateChanged(auth, user => {
   }
 });
 
-document.getElementById("btnEstadisticas").onclick = () => {
-    if (!window.registroProcesado) {
-        alert("Todavía no se generó el registro de eventos.");
-        return;
-    }
 
-    // Guardamos el JSON completo en localStorage
-    localStorage.setItem("registroProcesado", JSON.stringify(window.registroProcesado));
 
-    // Abrimos estadísticas sin parámetros
-    window.open("estadisticas.html", "_blank");
-};
 
 
 /* -------- CARGA DE DATOS -------- */
@@ -1071,6 +1061,17 @@ async function renderRegistroEventos(){
   }); // onValue
 } // renderRegistroEventos
 
+ document.getElementById("btnEstadisticas").onclick = () => {
+    if (!window.registroProcesado) {
+        alert("Todavía no se generó el registro de eventos.");
+        return;
+    }
+
+    localStorage.setItem("registroProcesado", JSON.stringify(window.registroProcesado));
+
+    window.open("estadisticas.html", "_blank");
+}; 
+
 // utilidad mínima para escapar HTML en nombres/strings
 function escapeHtml(unsafe) {
   if(!unsafe && unsafe !== 0) return "";
@@ -1094,6 +1095,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
