@@ -375,17 +375,27 @@ function listen() {
 async function save() {
   if(!dbRef) return;
   try {
-    await set(dbRef,{
-  timers: timersToSave,
-  dayStarted,
-  dayEnded,
-  updatedAt: new Date().toISOString()
-});
+    // crear copia limpia de timers para enviar a Firebase (no subir performance.now ni session fields)
+    const timersToSave = timers.map(t => {
+      const copy = { ...t };
+      // quitar campos solo de sesión/precision local
+      if (copy.sessionStartPerf !== undefined) delete copy.sessionStartPerf;
+      if (copy.startedAtPerf !== undefined) delete copy.startedAtPerf;
+      if (copy.startedAtReal !== undefined) delete copy.startedAtReal; // opcional: puedes mantener startedAtReal si quieres
+      return copy;
+    });
 
+    await set(dbRef, {
+      timers: timersToSave,
+      dayStarted,
+      dayEnded,
+      updatedAt: new Date().toISOString()
+    });
   } catch(err) {
     console.error("Error guardando diaActual:", err);
   }
 }
+
 
 
 /* -------- FUNCIÓN DE LOG DE EVENTOS (historial) -------- */
@@ -1098,6 +1108,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
