@@ -356,7 +356,27 @@ onAuthStateChanged(auth, user => {
 function listen() {
   onValue(dbRef, snap => {
     const data = snap.val() || {};
-    timers = data.timers || [];
+    const incoming = data.timers || [];
+
+incoming.forEach(remote => {
+  const local = timers.find(t => t.createdAt === remote.createdAt);
+
+  if (!local) {
+    // nuevo timer que no existía localmente
+    timers.push(remote);
+    return;
+  }
+
+  // si está corriendo localmente NO pisamos su estado
+  if (local.running) {
+    // mantenemos la sesión local activa
+    return;
+  }
+
+  // si no estaba corriendo, podemos reemplazarlo
+  Object.assign(local, remote);
+});
+
 
     // Para cada timer: si estaba marcado como running en la DB y tiene startedAt absoluto,
     // dejamos startedAt (ms) — pero añadimos sessionStartPerf para la sesión actual.
@@ -389,28 +409,26 @@ function listen() {
 
 
 async function save() {
-  if(!dbRef) return;
-  try {
-    // crear copia limpia de timers para enviar a Firebase (no subir performance.now ni session fields)
-    const timersToSave = timers.map(t => {
-      const copy = { ...t };
-      // quitar campos solo de sesión/precision local
-      if (copy.sessionStartPerf !== undefined) delete copy.sessionStartPerf;
-      if (copy.startedAtPerf !== undefined) delete copy.startedAtPerf;
-      if (copy.startedAtReal !== undefined) delete copy.startedAtReal; // opcional: puedes mantener startedAtReal si quieres
-      return copy;
-    });
+  if (!dbRef) return;
 
-    await set(dbRef, {
-      timers: timersToSave,
-      dayStarted,
-      dayEnded,
-      updatedAt: new Date().toISOString()
-    });
-  } catch(err) {
-    console.error("Error guardando diaActual:", err);
-  }
+  const cleanTimers = timers.map(t => ({
+    name: t.name,
+    elapsed: t.elapsed,
+    target: t.target,
+    running: t.running,
+    startedAt: t.running ? t.startedAt : null,
+    completed: t.completed || false,
+    createdAt: t.createdAt,
+    note: t.note || ""
+  }));
+
+  await set(dbRef, {
+    timers: cleanTimers,
+    dayStarted,
+    dayEnded
+  });
 }
+
 
 
 
@@ -1151,6 +1169,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
