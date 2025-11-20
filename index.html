@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -163,7 +164,9 @@
 <!-- 🔵 MENU SUPERIOR -->
 <div id="menu">
   <button onclick="openSection('mainPage')">🏠 Cronómetros</button>
-  <button id="btnEstadisticas">📊 Estadísticas Generales</button>
+  <button onclick="window.open('estadisticas.html', '_blank')">📊 Estadísticas Generales</button>
+
+
   <button onclick="openSection('statsPersonal')">👤 Estadísticas Individuales</button>
   <!-- NUEVO BOTÓN -->
   <button onclick="openSection('registroEventos')">📜 Registro de eventos</button>
@@ -352,9 +355,6 @@ onAuthStateChanged(auth, user => {
 });
 
 
-
-
-
 /* -------- CARGA DE DATOS -------- */
 function listen() {
   onValue(dbRef, snap => {
@@ -381,14 +381,6 @@ async function save() {
     console.error("Error guardando diaActual:", err);
   }
 }
-// >>> INSERTAR en index.html: sincronizar meta de cronómetros a localStorage
-
-
-// Llamar a esta función cada vez que guardes el estado principal
-// Por ejemplo, añade esto al final de save():
-// await set(dbRef, {...});  <-- ya lo tienes
-// luego:
-syncTimersMetaToLocalStorage();
 
 
 /* -------- FUNCIÓN DE LOG DE EVENTOS (historial) -------- */
@@ -1032,6 +1024,19 @@ async function renderRegistroEventos(){
     timersMeta: timersMeta || {}
   };
 
+// --- ABRIR ESTADÍSTICAS ---
+document.getElementById("btnEstadisticas").onclick = () => {
+    if (!window.registroProcesado) {
+        alert("Todavía no se generó el registro de eventos.");
+        return;
+    }
+
+    localStorage.setItem("registroProcesado", JSON.stringify(window.registroProcesado));
+
+    window.open("estadisticas.html", "_blank");
+};
+
+  
   // notificar a quien escuche
   window.dispatchEvent(new CustomEvent('registroProcesadoReady', { detail: window.registroProcesado }));
 })();
@@ -1069,17 +1074,6 @@ async function renderRegistroEventos(){
   }); // onValue
 } // renderRegistroEventos
 
- document.getElementById("btnEstadisticas").onclick = () => {
-    if (!window.registroProcesado) {
-        alert("Todavía no se generó el registro de eventos.");
-        return;
-    }
-
-    localStorage.setItem("registroProcesado", JSON.stringify(window.registroProcesado));
-
-    window.open("estadisticas.html", "_blank");
-}; 
-
 // utilidad mínima para escapar HTML en nombres/strings
 function escapeHtml(unsafe) {
   if(!unsafe && unsafe !== 0) return "";
@@ -1103,14 +1097,6 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
-
-
-
-
-
-
-
-
 
 
 
