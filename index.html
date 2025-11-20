@@ -1239,10 +1239,10 @@ document.getElementById("btnEstadisticas").onclick = () => {
         alert("Todavía no se generó el registro de eventos.");
         return;
     }
-localStorage.setItem("registroFilas", JSON.stringify(filas));
+
 
     localStorage.setItem("registroProcesado", JSON.stringify(window.registroProcesado));
-
+localStorage.setItem("registroFilas", JSON.stringify(filas));
     window.open("estadisticas.html", "_blank");
 };
 /* ===========================
@@ -1257,6 +1257,7 @@ localStorage.setItem("registroFilas", JSON.stringify(filas));
 
 </body>
 </html>
+
 
 
 
