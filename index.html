@@ -782,6 +782,8 @@ window.resetTimer = async i => {
   timers[i].elapsed=0;
   timers[i].running=false;
   timers[i].completed=false;
+  timers[i].updatedAt = Date.now();
+
   await save();
 
   logEvento(currentUid, "timer_reseteado", {
@@ -1217,6 +1219,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
