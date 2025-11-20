@@ -58,9 +58,20 @@ function normalizeRegistro(raw) {
 
   // Ensure numeric durations and dia numbers
   sessions.forEach(s => {
-    s.durationSec = Number(s.durationSec || 0);
-    if (s.dia !== null && s.dia !== undefined) s.dia = Number(s.dia);
-  });
+  // convertir a número
+  s.durationSec = Number(s.durationSec || 0);
+  if (s.dia !== null && s.dia !== undefined) s.dia = Number(s.dia);
+
+  // ⭐ NUEVO: si la sesión está abierta (sin endTs), calcular tiempo vivo en este momento
+  if (!s.endTs && s.startTs) {
+    const now = Date.now();
+    const start = new Date(s.startTs).getTime();
+    const live = Math.max(0, Math.round((now - start) / 1000));
+    s.durationSec += live;
+  }
+});
+
+
 
   return { dias, sessions, timersMeta };
 }
@@ -612,6 +623,7 @@ if (typeof window !== "undefined") window.renderStatsGeneral = window.renderStat
 
 // ❌ Línea problemática eliminada:
 // export { renderStatsGeneral };
+
 
 
 
