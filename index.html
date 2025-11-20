@@ -548,7 +548,8 @@ document.getElementById("createTimerBtn").onclick = async () => {
     elapsed: 0,
     running: false,
     completed: false,
-    createdAt
+    createdAt,
+    updatedAt: Date.now()
   };
 
   timers.push(newTimer);
@@ -1219,6 +1220,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
