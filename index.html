@@ -517,13 +517,31 @@ function renderTimers() {
   const container = document.getElementById("timers-container");
   container.innerHTML = "";
 
-  const totalTargetSeconds = timers.reduce((sum, t) => sum + t.target * 60, 0);
-  const totalElapsedSeconds = timers.reduce((sum, t) => {
-    let display = t.elapsed;
-    if (t.running && t.startedAt) display += Math.floor((performance.now() - t.startedAt) / 1000);
+    const totalTargetSeconds = timers.reduce((sum, t) => {
+    const targetMin = Number(t.target);
+    return sum + (isFinite(targetMin) && targetMin > 0 ? targetMin * 60 : 0);
+  }, 0);
 
+  const totalElapsedSeconds = timers.reduce((sum, t) => {
+    let display = Number(t.elapsed) || 0;
+
+    if (t.running) {
+      // si tenemos referencia de sesión de alta precisión la usamos para la UI,
+      // pero para sumar al total también es correcto usar Date.now() (ambos son ms).
+      if (t.sessionStartPerf !== undefined && t.startedAt !== undefined) {
+        // perf: tiempo desde inicio de sesión actual
+        const perfDeltaSec = Math.floor((performance.now() - t.sessionStartPerf) / 1000);
+        display += perfDeltaSec;
+      } else if (t.startedAt !== undefined) {
+        // fallback absoluto (por ejemplo ventana nueva)
+        display += Math.floor((Date.now() - t.startedAt) / 1000);
+      }
+    }
     return sum + display;
   }, 0);
+
+  const progress = totalTargetSeconds > 0 ? (totalElapsedSeconds / totalTargetSeconds) * 100 : 0;
+
 
   const dayInfoDiv = document.getElementById("dayInfo");
 
@@ -549,10 +567,15 @@ function renderTimers() {
     div.draggable = true;
 
     // elapsed temporal
-    let displayElapsed = t.elapsed;
-    if (t.running && t.startedAt) {
-  displayElapsed += Math.floor((performance.now() - t.startedAt) / 1000);
-}
+        let displayElapsed = Number(t.elapsed) || 0;
+    if (t.running) {
+      if (t.sessionStartPerf !== undefined && t.startedAt !== undefined) {
+        displayElapsed += Math.floor((performance.now() - t.sessionStartPerf) / 1000);
+      } else if (t.startedAt !== undefined) {
+        displayElapsed += Math.floor((Date.now() - t.startedAt) / 1000);
+      }
+    }
+
 
 
     const pctObj = ((displayElapsed / (t.target * 60)) * 100).toFixed(1);
@@ -1128,6 +1151,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
