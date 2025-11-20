@@ -163,7 +163,8 @@
 <!-- 🔵 MENU SUPERIOR -->
 <div id="menu">
   <button onclick="openSection('mainPage')">🏠 Cronómetros</button>
-  <button onclick="window.open('estadisticas.html?uid=' + currentUid, '_blank')">📊 Estadísticas Generales</button>
+  <button id="btnEstadisticas">📊 Estadísticas Generales</button>
+
 
 
 
@@ -354,6 +355,10 @@ onAuthStateChanged(auth, user => {
   }
 });
 
+document.getElementById("btnEstadisticas").onclick = () => {
+    if (!currentUid) return alert("Debes iniciar sesión");
+    window.open(`estadisticas.html?uid=${currentUid}`, "_blank");
+};
 
 /* -------- CARGA DE DATOS -------- */
 function listen() {
@@ -1084,6 +1089,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
