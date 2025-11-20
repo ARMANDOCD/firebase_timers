@@ -1,331 +1,555 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<title>Estadísticas Generales</title>
-
+<meta charset="utf-8" />
+<title>Estadísticas (crudo desde historial)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
 <style>
-body {
-  font-family: Segoe UI, sans-serif;
-  background: #ececec;
-  padding: 20px;
-}
-h1, h2 { color:#222; }
-.card {
-  background: white;
-  padding:15px;
-  border-radius:10px;
-  box-shadow:0 2px 6px rgba(0,0,0,0.2);
-  margin-bottom:20px;
-}
-#filters {
-  display:flex;
-  gap:10px;
-  margin-bottom:20px;
-}
-select { padding:6px; }
-table {
-  border-collapse: collapse;
-  width: 100%;
-}
-th, td {
-  border-bottom:1px solid #ccc;
-  padding:6px;
-}
+  body{font-family:Segoe UI, sans-serif; padding:18px; background:#f5f5f7; color:#111}
+  .card{background:#fff;border-radius:10px;padding:14px;margin-bottom:14px;box-shadow:0 2px 8px rgba(0,0,0,0.06)}
+  h1{margin:0 0 10px}
+  #filters{display:flex;gap:10px;flex-wrap:wrap}
+  select,input{padding:6px;border-radius:6px;border:1px solid #ddd}
+  table{width:100%;border-collapse:collapse;margin-top:10px}
+  th,td{padding:8px;border-bottom:1px solid #eee;font-size:13px}
+  .small{font-size:12px;color:#666}
 </style>
 </head>
-
 <body>
-<h1>📊 Estadísticas Generales</h1>
+  <h1>📊 Estadísticas — Desde historialEventos</h1>
 
-<div class="card">
-  <h2>Filtros</h2>
-  <div id="filters">
-    <select id="filterDia"></select>
-    <select id="filterFecha"></select>
+  <div class="card" id="infoCard">
+    <div class="small">Este panel lee <b>directamente</b> el historial de eventos (usuarios/{uid}/historialEventos) y los objetivos desde <b>localStorage</b> (timersMetaLocal). Asegúrate de abrir esta página desde la misma máquina donde usas el index o que index haya guardado <code>timersMetaLocal</code>.</div>
   </div>
-</div>
 
-<div class="card">
-  <h2>Resumen General</h2>
-  <div id="resumen"></div>
-</div>
+  <div class="card">
+    <h3>Filtros</h3>
+    <div id="filters">
+      <select id="filterDia"><option value="">Todos los días</option></select>
+      <select id="filterFecha"><option value="">Todas las fechas</option></select>
+      <input id="searchName" placeholder="Buscar actividad (nombre)" />
+      <button id="refreshBtn">🔁 Refrescar</button>
+      <div class="small" id="status" style="margin-left:auto"></div>
+    </div>
+  </div>
 
-<div class="card">
-  <h2>Tiempo por Cronómetro</h2>
-  <canvas id="chartActividades"></canvas>
-</div>
+  <div class="card">
+    <h3>Resumen</h3>
+    <div id="resumen"></div>
+  </div>
 
-<div class="card">
-  <h2>Tiempo por Día</h2>
-  <canvas id="chartDias"></canvas>
-</div>
+  <div class="card">
+    <h3>Tiempo por actividad</h3>
+    <canvas id="chartActividades" height="120"></canvas>
+  </div>
 
-<div class="card">
-  <h2>Sesiones de trabajo</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>Actividad</th>
-        <th>Día</th>
-        <th>Fecha</th>
-        <th>Inicio</th>
-        <th>Fin</th>
-        <th>Duración</th>
-      </tr>
-    </thead>
-    <tbody id="tablaSesiones"></tbody>
-  </table>
-</div>
+  <div class="card">
+    <h3>Tiempo por día</h3>
+    <canvas id="chartDias" height="120"></canvas>
+  </div>
 
-<script>
-// ============================
-//  1. Cargar datos
-// ============================
-const data = localStorage.getItem("registroProcesado");
-if (!data) {
-    document.body.innerHTML = "<h2>No se encontraron datos (registroProcesado). Abra desde index.html</h2>";
-    throw new Error("No hay datos");
+  <div class="card">
+    <h3>Sesiones (reconstruidas desde historial)</h3>
+    <table>
+      <thead><tr>
+        <th>Actividad</th><th>Día</th><th>Fecha</th><th>Inicio</th><th>Fin</th><th>Duración</th><th>Objetivo (min)</th><th>Cumplido</th>
+      </tr></thead>
+      <tbody id="tablaSesiones"></tbody>
+    </table>
+  </div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+import { getDatabase, ref, onValue, get } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+
+/* ========== CONFIG FIREBASE ========== */
+const firebaseConfig = {
+  apiKey: "AIzaSyCby9oxzPzBDllkzuW21ZoGNJh67UgYZ8E",
+  authDomain: "notion-timers-2a3bb.firebaseapp.com",
+  databaseURL: "https://notion-timers-2a3bb-default-rtdb.firebaseio.com",
+  projectId: "notion-timers-2a3bb",
+  storageBucket: "notion-timers-2a3bb.firebasestorage.app",
+  messagingSenderId: "78500747038",
+  appId: "1:78500747038:web:2b5fdec3731a203c7f1b0f"
+};
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+/* ========== UTIL HELPERS ========== */
+const $ = id => document.getElementById(id);
+
+function parseMarcaString(m){
+  // acepta "HH:MM:SS" o "0:01:03"
+  if(!m && m!==0) return null;
+  if(typeof m === "number") return Number(m);
+  const s = String(m).trim();
+  if(!s) return null;
+  const parts = s.split(':').map(p => Number(p));
+  if(parts.length === 3){
+    return parts[0]*3600 + parts[1]*60 + parts[2];
+  } else if(parts.length === 2){
+    return parts[0]*60 + parts[1];
+  } else {
+    const n = Number(s);
+    return isNaN(n) ? null : n;
+  }
 }
 
-const registro = JSON.parse(data);
-const sessionsRaw = registro.sessions || [];
-const timersMeta = registro.timersMeta || {};
-const diasRegistro = registro.dias || [];
+// preferElapsed: intenta extraer elapsed de varios nombres posibles
+function extractElapsedFromEvent(ev){
+  if(ev == null) return null;
+  const candidates = ['endElapsed','startElapsed','elapsed','elapsedAntes','marcaElapsed','marcaSeconds','marcaSec'];
+  for(const k of candidates){
+    if(ev[k] !== undefined && ev[k] !== null && ev[k] !== "") return Number(ev[k]);
+  }
+  // si hay campo 'marca' en formato HH:MM:SS
+  if(ev.marca !== undefined && ev.marca !== null){
+    const p = parseMarcaString(ev.marca);
+    if(p !== null) return Number(p);
+  }
+  // si hay campo 'marcaStr' o 'marcaStr' etc
+  if(ev.marcaStr !== undefined && ev.marcaStr !== null){
+    const p = parseMarcaString(ev.marcaStr);
+    if(p !== null) return Number(p);
+  }
+  return null;
+}
 
-// ============================
-//  2. Normalizar sesiones
-// ============================
-const sessions = sessionsRaw.map(s => {
-    const duration = Math.max(0, (Number(s.endElapsed) || 0) - (Number(s.startElapsed) || 0));
+// diff marcas preferente: end - start (si ambos disponibles)
+function durationFromPair(startEv, endEv){
+  // primer intento: buscar campos numéricos absolutos (elapsed acumulado)
+  // muchos eventos guardaron elapsedAntes/elapsed (valor acumulado) => diff
+  const startCandidates = ['elapsedAntes','elapsed','startElapsed'];
+  const endCandidates = ['elapsed','endElapsed','elapsedAntes'];
+  let startVal = null, endVal = null;
 
-    return {
-        ...s,
+  for(const k of startCandidates) if(startEv[k] !== undefined && startEv[k] !== null) { startVal = Number(startEv[k]); break; }
+  if(startVal === null) {
+    // intentar marca string en startEv
+    startVal = extractElapsedFromEvent(startEv);
+  }
+  for(const k of endCandidates) if(endEv[k] !== undefined && endEv[k] !== null) { endVal = Number(endEv[k]); break; }
+  if(endVal === null) {
+    endVal = extractElapsedFromEvent(endEv);
+  }
+
+  if(startVal !== null && endVal !== null && !isNaN(startVal) && !isNaN(endVal) && endVal >= startVal){
+    return Math.max(0, Math.floor(endVal - startVal));
+  }
+
+  // fallback: si existen marca strings HH:MM:SS en ambos
+  const s1 = startEv.marca || startEv.marcaStr || startEv.marca_str || null;
+  const s2 = endEv.marca || endEv.marcaStr || endEv.marca_str || null;
+  if(s1 && s2){
+    const ps1 = parseMarcaString(s1), ps2 = parseMarcaString(s2);
+    if(ps1 !== null && ps2 !== null && ps2 >= ps1) return Math.max(0, ps2 - ps1);
+  }
+
+  // ultimate fallback: diferencia de timestamps (segundos)
+  try {
+    const st = new Date(startEv.timestamp).getTime();
+    const en = new Date(endEv.timestamp).getTime();
+    if(!isNaN(st) && !isNaN(en) && en >= st) return Math.max(0, Math.floor((en - st)/1000));
+  } catch(e){}
+  return 0;
+}
+
+/* ========== Obtener UID de la URL (opcional) o detectar automáticamente ========== */
+const params = new URLSearchParams(window.location.search);
+const uid = params.get("uid");
+if(!uid){
+  // intentar obtener UID de localStorage si index la guardó
+  try {
+    const uls = localStorage.getItem("currentUid");
+    if(uls) {
+      // si index guarda currentUid
+      console.log("UID from localStorage", uls);
+    }
+  } catch(e){}
+}
+
+/* ========== Read local timers meta (guardado por index) ========== */
+function readTimersMetaLocal(){
+  try {
+    const raw = localStorage.getItem("timersMetaLocal");
+    if(!raw) return {};
+    return JSON.parse(raw);
+  } catch(e){
+    console.warn("timersMetaLocal parse error", e);
+    return {};
+  }
+}
+
+/* ========== Reconstrucción: leer historialEventos desde Firebase para el uid dado ========== */
+function pathForUid(u){
+  if(!u) throw new Error("UID no provisto. Abre esta página con ?uid=... o usa index que guarde timersMetaLocal.");
+  return `usuarios/${u}/historialEventos`;
+}
+
+const refreshBtn = $('refreshBtn');
+refreshBtn.onclick = () => {
+  startListening();
+};
+
+const status = $('status');
+let listenerUnsub = null;
+
+async function startListening(){
+  status.textContent = "Cargando historial...";
+  if(!uid){
+    status.textContent = "No se recibió uid en la URL. Asegúrate de abrir desde index con ?uid=UID o guarda timersMetaLocal en localStorage.";
+    console.warn("UID faltante. Alternativamente, asegúrate que localStorage.timersMetaLocal exista.");
+    // intentamos igualmente leer localStorage y terminar con mensaje
+    rebuildFromLocalOnly();
+    return;
+  }
+
+  const eventosRef = ref(db, pathForUid(uid));
+  if(listenerUnsub) listenerUnsub(); // no existe en modular onValue no retorna func; but onValue returns unsubscribe function — we stored it earlier
+  // onValue returns unsubscribe function in modular v11
+  listenerUnsub = onValue(eventosRef, snap => {
+    const raw = snap.val() || {};
+    const eventosArr = Object.entries(raw).map(([k,v]) => ({ id:k, ...v }));
+    eventosArr.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+    status.textContent = `Eventos leídos: ${eventosArr.length}`;
+    processRawEvents(eventosArr);
+  }, err => {
+    console.error("Error leyendo historial:", err);
+    status.textContent = "Error leyendo historial. Mira la consola.";
+  });
+}
+
+function rebuildFromLocalOnly(){
+  const timersMetaLocal = readTimersMetaLocal();
+  // no hay historial: avisar
+  status.textContent = "UID no provisto; usando sólo timersMetaLocal (no habrá sesiones).";
+  // mostramos objetivos por timersMetaLocal para inspección
+  console.log("timersMetaLocal:", timersMetaLocal);
+}
+
+/* ========== processRawEvents: construir dias y sesiones EXACTAMENTE igual a la tabla ========== */
+function processRawEvents(eventosArr){
+  // Primero: construir timersMetaFromEvents (timer_creado)
+  const timersMetaFromEvents = {};
+  eventosArr.forEach(ev => {
+    if(ev.tipo === "timer_creado" && ev.timerId){
+      timersMetaFromEvents[ev.timerId] = {
+        name: ev.name || ev.timerId,
+        targetMin: ev.target !== undefined && ev.target !== null ? Number(ev.target) : null,
+        createdAt: ev.timestamp || ev.createdAt || null
+      };
+    }
+  });
+
+  // construir dias (pares dia_iniciado/dia_finalizado) - la misma lógica que en index
+  const inicios = eventosArr.filter(e => e.tipo === "dia_iniciado");
+  const finales = eventosArr.filter(e => e.tipo === "dia_finalizado");
+  const dias = [];
+  const usedFinal = new Set();
+  inicios.forEach((ini) => {
+    const iniTs = new Date(ini.timestamp);
+    let matched = null;
+    for(let j=0;j<finales.length;j++){
+      if(usedFinal.has(j)) continue;
+      const f = finales[j];
+      if(new Date(f.timestamp) >= iniTs){
+        matched = f; usedFinal.add(j); break;
+      }
+    }
+    dias.push({ inicio: ini.timestamp, fin: matched ? matched.timestamp : null, rawInicio: ini, rawFin: matched || null });
+  });
+
+  // construir sesiones: emparejar timer_iniciado -> (pausa|completado|reseteado|borrado)
+  const openMap = {}; // timerId -> startEv
+  const sessions = [];
+
+  eventosArr.forEach(ev => {
+    const tipo = ev.tipo;
+    const tid = ev.timerId || null;
+
+    if(tipo === "timer_iniciado" && tid){
+      // registrar inicio (guardar el evento completo)
+      openMap[tid] = ev;
+    } else if(tid && ["timer_pausado","timer_reseteado","timer_completado","timer_borrado"].includes(tipo)){
+      // cerrar sesión si hay un inicio abierto
+      const startEv = openMap[tid];
+      if(startEv){
+        const duration = durationFromPair(startEv, ev);
+        // determinar dia basándonos en startEv.timestamp y dias list
+        let diaNum = null;
+        for(let i=0;i<dias.length;i++){
+          const s = new Date(dias[i].inicio);
+          const e = dias[i].fin ? new Date(dias[i].fin) : null;
+          const st = new Date(startEv.timestamp);
+          if(e){
+            if(st >= s && st <= e){ diaNum = i+1; break; }
+          } else {
+            if(st >= s){ diaNum = i+1; break; }
+          }
+        }
+        const dateKey = startEv.timestamp ? new Date(startEv.timestamp).toISOString().slice(0,10) : null;
+
+        sessions.push({
+          timerId: tid,
+          name: startEv.name || (timersMetaFromEvents[tid] && timersMetaFromEvents[tid].name) || null,
+          startTs: startEv.timestamp,
+          endTs: ev.timestamp,
+          startElapsed: extractElapsedFromEvent(startEv),
+          endElapsed: extractElapsedFromEvent(ev),
+          durationSec: duration,
+          dia: diaNum,
+          dateKey,
+          closingType: ev.tipo || null
+        });
+
+        delete openMap[tid];
+      } else {
+        // no hay inicio: quizá el evento de inicio no está en el rango; ignoramos o creamos start ficticio
+        // intentamos crear una sesión corta usando only ev (no ideal)
+        const duration = extractElapsedFromEvent(ev) || 0;
+        sessions.push({
+          timerId: tid,
+          name: ev.name || (timersMetaFromEvents[tid] && timersMetaFromEvents[tid].name) || null,
+          startTs: ev.timestamp,
+          endTs: ev.timestamp,
+          startElapsed: null,
+          endElapsed: extractElapsedFromEvent(ev),
+          durationSec: duration,
+          dia: null,
+          dateKey: ev.timestamp ? new Date(ev.timestamp).toISOString().slice(0,10) : null,
+          closingType: ev.tipo || null
+        });
+      }
+    }
+    // otros tipos no abren ni cierran
+  });
+
+  // cerrar sesiones que quedan abiertas con el fin del día o now
+  const nowIso = new Date().toISOString();
+  Object.keys(openMap).forEach(tid => {
+    const startEv = openMap[tid];
+    // intentar cerrar al fin del día correspondiente (si existe)
+    let closed = false;
+    for(const d of dias){
+      const s = new Date(d.inicio);
+      const e = d.fin ? new Date(d.fin) : null;
+      const st = new Date(startEv.timestamp);
+      if(e && st >= s && st <= e){
+        // crear evento fake al fin del día
+        const fakeEnd = { timestamp: d.fin, tipo: "auto_cierre_por_day_end" };
+        const duration = durationFromPair(startEv, fakeEnd);
+        sessions.push({
+          timerId: tid,
+          name: startEv.name || (timersMetaFromEvents[tid] && timersMetaFromEvents[tid].name) || null,
+          startTs: startEv.timestamp,
+          endTs: d.fin,
+          startElapsed: extractElapsedFromEvent(startEv),
+          endElapsed: null,
+          durationSec: duration,
+          dia: null,
+          dateKey: startEv.timestamp ? new Date(startEv.timestamp).toISOString().slice(0,10) : null,
+          closingType: "auto_cierre_por_day_end"
+        });
+        closed = true;
+        break;
+      }
+    }
+    if(!closed){
+      const fakeEnd = { timestamp: nowIso, tipo: "auto_cierre_por_now" };
+      const duration = durationFromPair(startEv, fakeEnd);
+      sessions.push({
+        timerId: tid,
+        name: startEv.name || (timersMetaFromEvents[tid] && timersMetaFromEvents[tid].name) || null,
+        startTs: startEv.timestamp,
+        endTs: nowIso,
+        startElapsed: extractElapsedFromEvent(startEv),
+        endElapsed: null,
         durationSec: duration,
-        timerId: s.timerId,
-        name: s.name,
-        dia: s.dia,
-        dateKey: s.dateKey,
-        startTs: s.startTs,
-        endTs: s.endTs
-    };
-});
+        dia: null,
+        dateKey: startEv.timestamp ? new Date(startEv.timestamp).toISOString().slice(0,10) : null,
+        closingType: "auto_cierre_por_now"
+      });
+    }
+  });
 
-// ============================
-//  3. Construir metaPorTimerId
-// ============================
-const metaPorTimerId = {};
-for (const tid in timersMeta) {
-    const m = timersMeta[tid];
-    metaPorTimerId[tid] = {
-        name: m.name || "(sin nombre)",
-        targetMin: Number(m.target || 0),
-        createdAt: m.createdAt
-    };
+  // ahora tenemos sesiones y dias
+  // obtener objetivos de dos fuentes: localStorage (preferente) y timersMetaFromEvents (fallback)
+  const timersMetaLocal = readTimersMetaLocal();
+  // build a map: by timerId (tid) -> { name, targetMin }
+  const metaFinal = {};
+  // prefer local storage (index)
+  Object.keys(timersMetaLocal || {}).forEach(k => { metaFinal[k] = timersMetaLocal[k]; });
+  // fallback a events-created metadata
+  Object.keys(timersMetaFromEvents).forEach(k => {
+    if(!metaFinal[k]) metaFinal[k] = timersMetaFromEvents[k];
+  });
+
+  // ahora calculos agregados: acumulados por timer y por dia
+  const acumuladoPorTimer = {};
+  const sesionesOrdenadas = sessions.sort((a,b)=> new Date(a.startTs) - new Date(b.startTs));
+  sesionesOrdenadas.forEach(s => {
+    acumuladoPorTimer[s.timerId] = (acumuladoPorTimer[s.timerId] || 0) + (Number(s.durationSec) || 0);
+  });
+
+  // calcular rachas: por dia, objetivo = suma de objetivos de timers participantes en ese dia (tomando metaFinal)
+  const trabajadoPorDia = {};
+  const timersPorDia = {};
+  sesionesOrdenadas.forEach(s => {
+    if(s.dia == null) return;
+    trabajadoPorDia[s.dia] = (trabajadoPorDia[s.dia] || 0) + Number(s.durationSec || 0);
+    timersPorDia[s.dia] = timersPorDia[s.dia] || new Set();
+    if(s.timerId) timersPorDia[s.dia].add(s.timerId);
+  });
+  const objetivosPorDia = {};
+  Object.keys(timersPorDia).forEach(d => {
+    let sum = 0;
+    timersPorDia[d].forEach(tid => {
+      const m = metaFinal[tid];
+      const tmin = m ? Number(m.targetMin || m.target || 0) : 0;
+      sum += tmin * 60;
+    });
+    objetivosPorDia[d] = sum;
+  });
+  let maxRacha = 0, rachaActual = 0, prev = null;
+  const diasOrdenados = Object.keys(trabajadoPorDia).map(n=>Number(n)).sort((a,b)=>a-b);
+  diasOrdenados.forEach(d => {
+    const cumplido = (objetivosPorDia[d] && objetivosPorDia[d] > 0) ? (trabajadoPorDia[d] >= objetivosPorDia[d]) : false;
+    if(prev === null || d === prev + 1){
+      rachaActual = cumplido ? rachaActual + 1 : 0;
+    } else {
+      rachaActual = cumplido ? 1 : 0;
+    }
+    maxRacha = Math.max(maxRacha, rachaActual);
+    prev = d;
+  });
+
+  // PREPARAR datos para render
+  window._estad_backend = {
+    eventosArr,
+    dias,
+    sessions: sesionesOrdenadas,
+    metaFinal,
+    acumuladoPorTimer,
+    objetivosPorDia,
+    maxRacha
+  };
+
+  console.log("RECONSTRUCCION completa. window._estad_backend:", window._estad_backend);
+
+  renderAll(sesionesOrdenadas, dias, metaFinal, acumuladoPorTimer, objetivosPorDia, maxRacha);
 }
 
-// ============================
-//  4. Filtros
-// ============================
-const filterDia = document.getElementById("filterDia");
-const filterFecha = document.getElementById("filterFecha");
+/* ========== RENDER UI: filtros, tabla, graficas ========== */
+function renderAll(sessions, dias, metaFinal, acumuladoPorTimer, objetivosPorDia, maxRacha){
+  // filtros
+  const fDia = $('filterDia'); fDia.innerHTML = `<option value="">Todos los días</option>`;
+  dias.forEach((d,i)=> fDia.innerHTML += `<option value="${i+1}">Día ${i+1}</option>`);
 
-filterDia.innerHTML = `<option value="">Todos los días</option>`;
-diasRegistro.forEach(d => {
-    filterDia.innerHTML += `<option value="${d.dia}">Día ${d.dia}</option>`;
-});
+  const fechaSet = new Set(sessions.map(s=>s.dateKey).filter(x=>x));
+  const fFecha = $('filterFecha'); fFecha.innerHTML = `<option value="">Todas las fechas</option>`;
+  Array.from(fechaSet).sort().forEach(fn => fFecha.innerHTML += `<option value="${fn}">${fn}</option>`);
 
-const fechasUnicas = [...new Set(sessions.map(s => s.dateKey))];
-filterFecha.innerHTML = `<option value="">Todas las fechas</option>`;
-fechasUnicas.forEach(f => {
-    filterFecha.innerHTML += `<option value="${f}">${f}</option>`;
-});
+  $('searchName').oninput = renderTodo;
+  fDia.onchange = renderTodo; fFecha.onchange = renderTodo;
 
-filterDia.onchange = renderTodo;
-filterFecha.onchange = renderTodo;
+  // render inicial
+  renderTodo();
 
-// ============================
-//  5. Helper: formateo
-// ============================
-function formatSec(s) {
+  function filtrar(){
+    const d = fDia.value; const f = fFecha.value; const q = $('searchName').value.trim().toLowerCase();
+    return sessions.filter(s => {
+      if(d && String(s.dia) !== String(d)) return false;
+      if(f && s.dateKey !== f) return false;
+      if(q && (!s.name || !s.name.toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }
+
+  function formatSec(s){
     const h = Math.floor(s/3600);
     const m = Math.floor((s%3600)/60);
     const ss = s%60;
     return `${h}h ${m}m ${ss}s`;
-}
+  }
 
-function filtrarSesiones() {
-    const d = filterDia.value;
-    const f = filterFecha.value;
-    return sessions.filter(s => {
-        if (d && String(s.dia) !== d) return false;
-        if (f && s.dateKey !== f) return false;
-        return true;
-    });
-}
-
-// ============================
-//  6. Tabla con objetivo y cumplimiento
-// ============================
-function renderTabla(ss) {
-    const tbody = document.getElementById("tablaSesiones");
-    tbody.innerHTML = "";
-
-    const acumulado = {};  // por timerId
-
+  function renderTablaLocal(){
+    const ss = filtrar();
+    const tbody = $('tablaSesiones'); tbody.innerHTML = "";
+    const acumuladoLocal = {};
     ss.forEach(s => {
-        const tid = s.timerId;
-        const meta = metaPorTimerId[tid] || { targetMin: 0, name: s.name };
+      const tid = s.timerId;
+      acumuladoLocal[tid] = (acumuladoLocal[tid] || 0) + Number(s.durationSec || 0);
+      const meta = metaFinal[tid] || {};
+      const objetivoMin = Number(meta.targetMin || meta.target || 0);
+      const objetivoSec = objetivoMin * 60;
+      const cumplido = objetivoSec > 0 ? (acumuladoLocal[tid] >= objetivoSec ? "✔" : "✖") : "—";
 
-        acumulado[tid] = (acumulado[tid] || 0) + s.durationSec;
-
-        const objetivoSec = meta.targetMin * 60;
-        const cumplido = acumulado[tid] >= objetivoSec ? "✔" : "✖";
-
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-            <td>${s.name}</td>
-            <td>${s.dia}</td>
-            <td>${s.dateKey}</td>
-            <td>${new Date(s.startTs).toLocaleString()}</td>
-            <td>${new Date(s.endTs).toLocaleString()}</td>
-            <td>${formatSec(s.durationSec)}</td>
-            <td>${meta.targetMin}</td>
-            <td>${cumplido}</td>
-        `;
-        tbody.appendChild(tr);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${s.name || (meta && meta.name) || s.timerId}</td>
+        <td>${s.dia || ''}</td>
+        <td>${s.dateKey || ''}</td>
+        <td>${s.startTs ? new Date(s.startTs).toLocaleString() : ''}</td>
+        <td>${s.endTs ? new Date(s.endTs).toLocaleString() : ''}</td>
+        <td>${formatSec(Number(s.durationSec||0))}</td>
+        <td>${objetivoMin}</td>
+        <td>${cumplido}</td>
+      `;
+      tbody.appendChild(tr);
     });
-}
+  }
 
-// ============================
-//  7. Racha correcta
-// ============================
-function calcularRacha() {
-    const trabajPorDia = {};  
-    const timersPorDia = {};  
-
-    sessions.forEach(s => {
-        if (s.dia == null) return;
-
-        trabajPorDia[s.dia] = (trabajPorDia[s.dia] || 0) + s.durationSec;
-
-        timersPorDia[s.dia] = timersPorDia[s.dia] || new Set();
-        timersPorDia[s.dia].add(s.timerId);
-    });
-
-    const objetivosPorDia = {};
-    for (const dia in timersPorDia) {
-        let total = 0;
-        for (const tid of timersPorDia[dia]) {
-            const meta = metaPorTimerId[tid];
-            if (!meta) continue;
-            total += meta.targetMin * 60;
-        }
-        objetivosPorDia[dia] = total;
-    }
-
-    const diasOrd = Object.keys(trabajPorDia).map(Number).sort((a,b)=>a-b);
-
-    let max = 0, streak = 0, last = null;
-
-    diasOrd.forEach(d => {
-        const t = trabajPorDia[d];
-        const o = objetivosPorDia[d] || 0;
-
-        const cumplido = (o > 0 && t >= o);
-
-        if (last === null || d === last + 1) {
-            streak = cumplido ? streak + 1 : 0;
-        } else {
-            streak = cumplido ? 1 : 0;
-        }
-
-        max = Math.max(max, streak);
-        last = d;
-    });
-
-    return max;
-}
-
-// ============================
-//  8. Resumen
-// ============================
-function renderResumen(ss) {
-    const total = ss.reduce((a,b)=>a+b.durationSec, 0);
-    const diasSet = new Set(ss.map(s => s.dia));
-    const fechasSet = new Set(ss.map(s => s.dateKey));
-
-    const racha = calcularRacha();
-
-    document.getElementById("resumen").innerHTML = `
-        <p><b>Tiempo total:</b> ${formatSec(total)}</p>
-        <p><b>Días trabajados:</b> ${diasSet.size}</p>
-        <p><b>Fechas únicas:</b> ${fechasSet.size}</p>
-        <p><b>Racha de días cumplidos:</b> ${racha}</p>
-    `;
-}
-
-// ============================
-//  9. Gráficos
-// ============================
-let chartAct = null, chartDias = null;
-
-function renderChartActividades(ss) {
-    const acc = {};
+  // graficas
+  let chartA = null, chartD = null;
+  function renderCharts(){
+    const ss = filtrar();
+    const aggAct = {};
+    const aggDia = {};
     ss.forEach(s => {
-        acc[s.name] = (acc[s.name] || 0) + s.durationSec;
+      const name = s.name || (metaFinal[s.timerId] && metaFinal[s.timerId].name) || s.timerId;
+      aggAct[name] = (aggAct[name] || 0) + Number(s.durationSec || 0);
+      aggDia[s.dia || "sin"] = (aggDia[s.dia || "sin"] || 0) + Number(s.durationSec || 0);
     });
 
-    const labels = Object.keys(acc);
-    const values = Object.values(acc);
+    const labelsAct = Object.keys(aggAct);
+    const dataAct = Object.values(aggAct);
 
-    if (chartAct) chartAct.destroy();
+    if(chartA) chartA.destroy();
+    chartA = new Chart($('chartActividades'), { type:'bar', data:{ labels:labelsAct, datasets:[{ label:'Segundos', data:dataAct }]} });
 
-    chartAct = new Chart(document.getElementById("chartActividades"),{
-        type:"bar",
-        data:{ labels, datasets:[{ label:"Segundos", data:values }] }
-    });
+    const labelsDia = Object.keys(aggDia).map(d => d === 'sin' ? 'sin día' : 'Día ' + d);
+    const dataDia = Object.values(aggDia);
+    if(chartD) chartD.destroy();
+    chartD = new Chart($('chartDias'), { type:'line', data:{ labels:labelsDia, datasets:[{ label:'Segundos', data:dataDia, tension:0.25 }] } });
+  }
+
+  function renderResumenLocal(){
+    const ss = filtrar();
+    const total = ss.reduce((a,b)=>a+Number(b.durationSec||0),0);
+    const diasUnicos = new Set(ss.map(s=>s.dia).filter(x=>x));
+    const fechasUnicas = new Set(ss.map(s=>s.dateKey).filter(x=>x));
+    $('resumen').innerHTML = `<p><b>Tiempo total:</b> ${formatSec(total)}</p>
+      <p><b>Días trabajados:</b> ${diasUnicos.size}</p>
+      <p><b>Fechas únicas:</b> ${fechasUnicas.size}</p>
+      <p><b>Racha máxima (cumplimiento por día):</b> ${window._estad_backend.maxRacha}</p>`;
+  }
+
+  function renderTodo(){
+    renderTablaLocal();
+    renderCharts();
+    renderResumenLocal();
+  }
 }
 
-function renderChartDias(ss) {
-    const acc = {};
-    ss.forEach(s => {
-        acc[s.dia] = (acc[s.dia] || 0) + s.durationSec;
-    });
-
-    const labels = Object.keys(acc).map(d => "Día " + d);
-    const values = Object.values(acc);
-
-    if (chartDias) chartDias.destroy();
-
-    chartDias = new Chart(document.getElementById("chartDias"),{
-        type:"line",
-        data:{ labels, datasets:[{ label:"Segundos", data:values, tension:0.25 }] }
-    });
-}
-
-// ============================
-//  10. Render final
-// ============================
-function renderTodo() {
-    const ss = filtrarSesiones();
-    renderResumen(ss);
-    renderTabla(ss);
-    renderChartActividades(ss);
-    renderChartDias(ss);
-}
-
-renderTodo();
+/* ========== Inicial: arrancar escucha ========== */
+startListening();
 
 </script>
-
-
-
-
 </body>
 </html>
+
+
 
 
 
