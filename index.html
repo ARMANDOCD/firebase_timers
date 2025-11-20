@@ -381,6 +381,31 @@ async function save() {
     console.error("Error guardando diaActual:", err);
   }
 }
+// >>> INSERTAR en index.html: sincronizar meta de cronómetros a localStorage
+function syncTimersMetaToLocalStorage(){
+  try {
+    // construimos mapa: timerId -> { name, targetMin, createdAt }
+    const map = {};
+    (timers || []).forEach(t => {
+      const id = t.createdAt || t.timerId || (`${t.name}-${t.createdAt||Date.now()}`);
+      map[id] = {
+        name: t.name || (t.note ? t.note : "sin nombre"),
+        targetMin: Number(t.target || 0),
+        createdAt: t.createdAt || null
+      };
+    });
+    localStorage.setItem("timersMetaLocal", JSON.stringify(map));
+    // opcional: console.log("timersMetaLocal saved", map);
+  } catch(e){
+    console.error("Error guardando timersMetaLocal", e);
+  }
+}
+
+// Llamar a esta función cada vez que guardes el estado principal
+// Por ejemplo, añade esto al final de save():
+// await set(dbRef, {...});  <-- ya lo tienes
+// luego:
+syncTimersMetaToLocalStorage();
 
 
 /* -------- FUNCIÓN DE LOG DE EVENTOS (historial) -------- */
@@ -1095,6 +1120,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
