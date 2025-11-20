@@ -1,8 +1,5 @@
-// estadisticas.js
-// Versión única: procesa window.registroProcesado y renderiza Estadísticas Generales.
-// Modo: solo al entrar (no escucha en tiempo real).
-// Requiere: que index exponga window.registroProcesado o dispare 'registroProcesadoReady'.
-// Carga Chart.js dinámicamente.
+// estadisticas.js (versión que lee la tabla #registroTable directamente)
+// Reemplaza tu archivo anterior por este. No requiere Firebase ni window.registroProcesado.
 
 async function ensureChartJs() {
   if (window.Chart) return;
@@ -31,70 +28,279 @@ function isoToDateKey(iso) {
 function localStr(iso) { try { return new Date(iso).toLocaleString(); } catch { return iso; } }
 function escapeHtml(s) { if (s === null || s === undefined) return ""; return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;"); }
 
-/* ---------- normalize registro ---------- */
-function normalizeRegistro(raw) {
-  // Expected: raw = { dias:[], sessions:[], timersMeta:{} }
-  const reg = raw || {};
-  const dias = Array.isArray(reg.dias) ? reg.dias.map(d => ({
-    dia: d.dia,
-    inicio: d.inicio,
-    fin: d.fin || null,
-    dateKeys: Array.isArray(d.dateKeys) ? d.dateKeys : (d.dateKeys ? [d.dateKeys] : [])
-  })) : [];
-
-  const sessions = Array.isArray(reg.sessions) ? reg.sessions.map(s => ({
-    timerId: s.timerId || null,
-    name: s.name || s.nombre || null,
-    startTs: s.startTs || s.inicio || s.start || null,
-    endTs: s.endTs || s.fin || s.end || null,
-    durationSec: Number(s.durationSec || s.duracion || 0),
-    dia: (s.dia === undefined ? (s.dia === null ? null : null) : s.dia),
-    dateKey: s.dateKey || s.fecha || isoToDateKey(s.startTs || s.inicio),
-    objetivoMin: s.objetivoMin || s.target || null,
-    closingType: s.closingType || s.tipo || null
-  })) : [];
-
-  const timersMeta = reg.timersMeta || {};
-
-  // Ensure numeric durations and dia numbers
-  sessions.forEach(s => {
-  // convertir a número
-  s.durationSec = Number(s.durationSec || 0);
-  if (s.dia !== null && s.dia !== undefined) s.dia = Number(s.dia);
-
-  // ⭐ NUEVO: si la sesión está abierta (sin endTs), calcular tiempo vivo en este momento
-  if (!s.endTs && s.startTs) {
-    const now = Date.now();
-    const start = new Date(s.startTs).getTime();
-    const live = Math.max(0, Math.round((now - start) / 1000));
-    s.durationSec += live;
-  }
-});
-
-
-
-  return { dias, sessions, timersMeta };
+/* ---------- PARSEADOR de las celdas de la tabla ---------- */
+/*
+  Espera fila con columnas:
+  0: Día
+  1: Cronómetro (nombre)
+  2: Acción (tipo)
+  3: Marca (hh:mm:ss) - puede estar vacío
+  4: Fecha y hora (string local, p.ej "15/11/2025, 2:42:37 a. m.")
+  5: Objetivo (min) - puede estar vacío
+  6: Creado (fecha) - opcional
+*/
+function parseTimeStringHMS(hms) {
+  if (!hms) return null;
+  // formato "hh:mm:ss" o "mm:ss"
+  const parts = String(hms).trim().split(":").map(x => Number(x));
+  if (parts.length === 3) return parts[0]*3600 + parts[1]*60 + parts[2];
+  if (parts.length === 2) return parts[0]*60 + parts[1];
+  return null;
 }
 
-/* ---------- metrics calculation ---------- */
+// particular: parsear fechas locales como "15/11/2025, 2:42:37 a. m." (es-PE / es-ES style)
+function parseLocalDateString(s) {
+  if (!s) return null;
+  s = String(s).trim();
+
+  // quick try: Date.parse
+  const tryNative = new Date(s);
+  if (!isNaN(tryNative.getTime())) return tryNative;
+
+  // Normalizar a formato manejable:
+  // Reemplazar "a. m." / "p. m." por AM/PM
+  const s2 = s.replace(/\ba\. m\.\b/gi, "AM").replace(/\bp\. m\.\b/gi, "PM").replace(/\bAM\b/gi,"AM").replace(/\bPM\b/gi,"PM");
+
+  // Intentar detectar formato DD/MM/YYYY, HH:MM:SS AM
+  const m = s2.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})[,\s]+(\d{1,2}:\d{2}:\d{2})(?:\s*(AM|PM))?/i);
+  if (m) {
+    const day = Number(m[1]), month = Number(m[2]) - 1, year = Number(m[3]) < 100 ? 2000 + Number(m[3]) : Number(m[3]);
+    let time = m[4];
+    const ampm = m[5];
+    let [hh, mm, ss] = time.split(":").map(x=>Number(x));
+    if (ampm) {
+      if (ampm.toUpperCase() === "PM" && hh < 12) hh += 12;
+      if (ampm.toUpperCase() === "AM" && hh === 12) hh = 0;
+    }
+    return new Date(year, month, day, hh, mm, ss);
+  }
+
+  // fallback: try replacing comma and swapping to ISO-ish
+  const m2 = s2.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  const timeMatch = s2.match(/(\d{1,2}:\d{2}:\d{2})/);
+  if (m2 && timeMatch) {
+    const day = Number(m2[1]), month = Number(m2[2]) - 1, year = Number(m2[3]) < 100 ? 2000 + Number(m2[3]) : Number(m2[3]);
+    const [hh,mm,ss] = timeMatch[1].split(":").map(x=>Number(x));
+    return new Date(year, month, day, hh, mm, ss);
+  }
+
+  // última oportunidad: Date.parse on modified string
+  const try2 = new Date(s2);
+  if (!isNaN(try2.getTime())) return try2;
+
+  return null;
+}
+
+/* ---------- construir registro a partir de la tabla ---------- */
+function buildRegistroFromTable() {
+  const tbody = document.querySelector("#registroTable tbody");
+  if (!tbody) return null;
+  const rows = Array.from(tbody.querySelectorAll("tr"));
+  // ignorar fila de nota si existe (la que pusiste cuando no hay días)
+  const eventos = [];
+
+  rows.forEach(tr => {
+    // fila "nota" sin 7 celdas: ignorar
+    const tds = Array.from(tr.querySelectorAll("td"));
+    if (tds.length < 5) return;
+
+    const diaText = tds[0].textContent.trim();
+    const nombre = tds[1].textContent.trim();
+    const tipo = tds[2].textContent.trim();
+    const marcaText = tds[3].textContent.trim();
+    const fechaText = tds[4].textContent.trim();
+    const objetivoText = tds[5] ? tds[5].textContent.trim() : "";
+    const creadoText = tds[6] ? tds[6].textContent.trim() : "";
+
+    const ts = parseLocalDateString(fechaText);
+    const tsIso = ts ? ts.toISOString() : fechaText || null;
+
+    const marcaSec = parseTimeStringHMS(marcaText);
+
+    eventos.push({
+      diaCell: diaText === "" ? null : diaText,
+      nombre,
+      tipo,
+      marcaSec,
+      timestamp: tsIso,
+      objetivoMin: objetivoText ? Number(objetivoText) : (isNaN(Number(objetivoText)) ? null : Number(objetivoText)),
+      creado: creadoText || null,
+      rawRowText: [diaText, nombre, tipo, marcaText, fechaText, objetivoText, creadoText].join(" | ")
+    });
+  });
+
+  // ordenar por timestamp asc (si timestamp nulo, dejar al final)
+  eventos.sort((a,b) => {
+    if (!a.timestamp && !b.timestamp) return 0;
+    if (!a.timestamp) return 1;
+    if (!b.timestamp) return -1;
+    return new Date(a.timestamp) - new Date(b.timestamp);
+  });
+
+  // Detectar días: construir array de dias a partir de eventos tipo dia_iniciado / dia_finalizado
+  const inicios = eventos.filter(e => e.tipo === "dia_iniciado");
+  const finales = eventos.filter(e => e.tipo === "dia_finalizado");
+
+  const dias = [];
+  const usedFinalIdx = new Set();
+  inicios.forEach((ini, idx) => {
+    const iniTs = ini.timestamp ? new Date(ini.timestamp) : null;
+    let matchedFinal = null;
+    for (let j = 0; j < finales.length; j++) {
+      if (usedFinalIdx.has(j)) continue;
+      const f = finales[j];
+      const fTs = f.timestamp ? new Date(f.timestamp) : null;
+      if (iniTs && fTs && fTs >= iniTs) { matchedFinal = { event: f, index: j }; usedFinalIdx.add(j); break; }
+    }
+    dias.push({
+      dia: dias.length + 1,
+      inicio: ini.timestamp || null,
+      fin: matchedFinal ? matchedFinal.event.timestamp : null,
+      rawInicio: ini,
+      rawFin: matchedFinal ? matchedFinal.event : null
+    });
+  });
+
+  // Construir timerTargets por nombre (viene de timer_creado filas)
+  const timersMeta = {};
+  eventos.forEach(ev => {
+    if (ev.tipo === "timer_creado") {
+      const key = ev.nombre || ("timer_" + Math.random().toString(36).slice(2,8));
+      if (!timersMeta[key]) timersMeta[key] = { name: key, target: ev.objetivoMin || null, createdAt: ev.timestamp || null };
+      else { timersMeta[key].target = ev.objetivoMin || timersMeta[key].target; if (ev.timestamp) timersMeta[key].createdAt = ev.timestamp; }
+    }
+  });
+
+  // Crear sesiones: para cada día, procesar eventos que ocurren dentro de ese día
+  const sessions = [];
+
+  function assignDiaForTs(tsIso) {
+    if (!tsIso) return null;
+    const t = new Date(tsIso);
+    for (const d of dias) {
+      const s = d.inicio ? new Date(d.inicio) : null;
+      const e = d.fin ? new Date(d.fin) : null;
+      if (s && e) { if (t >= s && t <= e) return d.dia; }
+      else if (s && !e) { if (t >= s) return d.dia; }
+    }
+    return null;
+  }
+
+  // Para emparejar inicios/pausas por nombre dentro de cada día
+  dias.forEach(d => {
+    const sTs = d.inicio ? new Date(d.inicio).getTime() : null;
+    const eTs = d.fin ? new Date(d.fin).getTime() : null;
+    const slice = eventos.filter(ev => {
+      if (!ev.timestamp) return false;
+      const t = new Date(ev.timestamp).getTime();
+      if (sTs && eTs) return t >= sTs && t <= eTs;
+      if (sTs && !eTs) return t >= sTs;
+      return false;
+    });
+
+    // por nombre, recorrer y emparejar inicios->pausa
+    const openByName = {}; // name -> last iniciado event
+    slice.forEach(ev => {
+      const name = ev.nombre || "sin_nombre";
+      if (ev.tipo === "timer_iniciado") {
+        openByName[name] = ev;
+      } else if (["timer_pausado","timer_reseteado","timer_completado","timer_borrado"].includes(ev.tipo)) {
+        const startEv = openByName[name];
+        if (startEv && startEv.timestamp) {
+          const startTs = startEv.timestamp;
+          const endTs = ev.timestamp || d.fin || null;
+          const durationSec = (startTs && endTs) ? Math.max(0, Math.round((new Date(endTs) - new Date(startTs)) / 1000)) : 0;
+          sessions.push({
+            timerId: name,
+            name,
+            startTs,
+            endTs,
+            durationSec,
+            dia: d.dia,
+            dateKey: isoToDateKey(startTs),
+            objetivoMin: (timersMeta[name] && timersMeta[name].target) ? Number(timersMeta[name].target) : (startEv.objetivoMin || null),
+            closingType: ev.tipo
+          });
+          delete openByName[name];
+        } else {
+          // No había inicio registrado en slice -> ignoramos (o podríamos crear sesión 0)
+        }
+      }
+    });
+
+    // Cerrar inicios abiertos con fin del día si existe
+    Object.keys(openByName).forEach(name => {
+      const startEv = openByName[name];
+      const startTs = startEv.timestamp;
+      const endTs = d.fin || null;
+      if (startTs && endTs) {
+        const durationSec = Math.max(0, Math.round((new Date(endTs) - new Date(startTs)) / 1000));
+        sessions.push({
+          timerId: name,
+          name,
+          startTs,
+          endTs,
+          durationSec,
+          dia: d.dia,
+          dateKey: isoToDateKey(startTs),
+          objetivoMin: (timersMeta[name] && timersMeta[name].target) ? Number(timersMeta[name].target) : (startEv.objetivoMin || null),
+          closingType: "auto_cierre_por_day_end"
+        });
+      }
+    });
+  });
+
+  // También manejar eventos que están fuera de cualquier día ("sin día") — opcional: no las convertimos en sessions salvo si hay inicio+pausa fuera de días
+  // Buscamos inicios que no estén en dias y su correspondiente pausa fuera de dias
+  const outside = eventos.filter(ev => assignDiaForTs(ev.timestamp) === null);
+  const openOutside = {};
+  outside.forEach(ev => {
+    const name = ev.nombre || "sin_nombre";
+    if (ev.tipo === "timer_iniciado") openOutside[name] = ev;
+    else if (["timer_pausado","timer_reseteado","timer_completado","timer_borrado"].includes(ev.tipo)) {
+      const st = openOutside[name];
+      if (st && st.timestamp) {
+        const startTs = st.timestamp;
+        const endTs = ev.timestamp;
+        const durationSec = Math.max(0, Math.round((new Date(endTs) - new Date(startTs)) / 1000));
+        sessions.push({
+          timerId: name,
+          name,
+          startTs,
+          endTs,
+          durationSec,
+          dia: null,
+          dateKey: isoToDateKey(startTs),
+          objetivoMin: (timersMeta[name] && timersMeta[name].target) ? Number(timersMeta[name].target) : (st.objetivoMin || null),
+          closingType: ev.tipo
+        });
+        delete openOutside[name];
+      }
+    }
+  });
+
+  // Exponer estructura
+  const registro = {
+    dias,
+    sessions,
+    timersMeta
+  };
+  return registro;
+}
+
+/* ---------- METRICS (basado en tu anterior) ---------- */
 function computeMetrics(reg) {
   const { dias, sessions, timersMeta } = reg;
 
-  // total accumulated
   const totalAccumulatedSec = sessions.reduce((acc, s) => acc + (Number(s.durationSec) || 0), 0);
-
-  // num work-days
   const numDias = dias.length;
-
-  // num calendar dates
   const uniqueDates = new Set(sessions.map(s => s.dateKey).filter(Boolean));
   const numFechas = uniqueDates.size;
 
-  // per-day aggregation (by dia number)
+  // perDia
   const perDia = {};
-  dias.forEach(d => {
-    perDia[d.dia] = { dia: d.dia, inicio: d.inicio, fin: d.fin || null, dateKeys: d.dateKeys || [], totalSec: 0, sessions: [], objetivosMinTotal: 0, objetivoSecTotal: 0, tiempoRestanteSec: 0, exitoso: false };
-  });
+  dias.forEach(d => perDia[d.dia] = { dia: d.dia, inicio: d.inicio, fin: d.fin || null, dateKeys: d.dateKeys || [], totalSec:0, sessions:[], objetivosMinTotal:0, objetivoSecTotal:0, tiempoRestanteSec:0, exitoso:false });
+
   if (!perDia["sin_dia"]) perDia["sin_dia"] = { dia: null, totalSec: 0, sessions: [], objetivosMinTotal: 0, dateKeys: [], objetivoSecTotal: 0, tiempoRestanteSec: 0, exitoso: false };
 
   sessions.forEach(s => {
@@ -105,45 +311,39 @@ function computeMetrics(reg) {
     if (s.dateKey && !perDia[k].dateKeys.includes(s.dateKey)) perDia[k].dateKeys.push(s.dateKey);
   });
 
-  // compute objetivos per day: sum of timer targets used in that day
-  // compute objetivos per day: sum of timer targets (todos los cronómetros)
-const timerTargets = {};
-Object.entries(timersMeta || {}).forEach(([id, meta]) => {
-  if (meta && meta.target != null) timerTargets[id] = Number(meta.target);
-});
-
-// AGRUPACIÓN POR DÍA (PARTE CRÍTICA)
-Object.values(perDia).forEach(d => {
-
-  // usar TODOS los cronómetros configurados, no solo los iniciados
-  const seen = new Set(Object.keys(timerTargets));
-
-  let objMin = 0;
-  seen.forEach(tid => {
-    if (timerTargets[tid] != null) objMin += timerTargets[tid];
+  // calcular objetivos por día sumando targets de timers usados en ese día
+  const timerTargets = {};
+  Object.entries(timersMeta || {}).forEach(([id, meta]) => {
+    if (meta && meta.target != null) timerTargets[id] = Number(meta.target);
   });
 
-  d.objetivosMinTotal = objMin;
-  d.objetivoSecTotal = Math.round(objMin * 60);
-  d.tiempoRestanteSec = Math.max(0, d.objetivoSecTotal - d.totalSec);
-  d.exitoso = (d.objetivoSecTotal > 0)
-    ? (d.totalSec >= d.objetivoSecTotal)
-    : false;
+  Object.values(perDia).forEach(d => {
+    const seen = new Set();
+    d.sessions.forEach(s => { if (s.timerId) seen.add(s.timerId); });
+    let objMin = 0;
+    seen.forEach(tid => {
+      if (timerTargets[tid] != null) objMin += timerTargets[tid];
+      else {
+        const f = d.sessions.find(x => x.timerId === tid && x.objetivoMin);
+        if (f && f.objetivoMin) objMin += Number(f.objetivoMin);
+      }
+    });
+    d.objetivosMinTotal = objMin;
+    d.objetivoSecTotal = Math.round(objMin * 60);
+    d.tiempoRestanteSec = Math.max(0, d.objetivoSecTotal - d.totalSec);
+    d.exitoso = (d.objetivoSecTotal > 0) ? (d.totalSec >= d.objetivoSecTotal) : false;
+  });
 
-});  // <-- ESTA ES LA ÚNICA FORMA CORRECTA DE CERRAR ESTE BLOQUE
-
-
-
-  // per-date aggregation (calendar)
+  // per-date (calendar)
   const perDate = {};
   sessions.forEach(s => {
     const k = s.dateKey || isoToDateKey(s.startTs);
-    if (!perDate[k]) perDate[k] = { dateKey: k, totalSec: 0, sessions: [] };
+    if (!perDate[k]) perDate[k] = { dateKey: k, totalSec:0, sessions:[] };
     perDate[k].totalSec += Number(s.durationSec || 0);
     perDate[k].sessions.push(s);
   });
 
-  // per-date objetivos
+  // perDate objetivos
   const perDateObjetivos = {};
   Object.keys(perDate).forEach(dk => {
     const timersSeen = new Set();
@@ -159,22 +359,19 @@ Object.values(perDia).forEach(d => {
     perDateObjetivos[dk] = objMin;
   });
 
-  // compute max racha of successful dates (calendar)
+  // racha máxima
   const dateKeysSorted = Object.keys(perDate).sort();
   let maxRacha = 0, curRacha = 0;
   dateKeysSorted.forEach(k => {
     const objetivoMin = perDateObjetivos[k] || 0;
-    const isEx = (objetivoMin > 0) ? (perDate[k].totalSec >= Math.round(objetivoMin * 60)) : false;
+    const isEx = objetivoMin > 0 ? (perDate[k].totalSec >= Math.round(objetivoMin * 60)) : false;
     if (isEx) { curRacha++; maxRacha = Math.max(maxRacha, curRacha); } else { curRacha = 0; }
   });
 
-  // total days successful (work-day)
   const diasExitososCount = Object.values(perDia).filter(d => (d.dia !== null) && d.objetivoSecTotal && d.totalSec >= d.objetivoSecTotal).length;
 
-  // averages
   const sessionsCount = sessions.length;
   const mediaPorSesion = sessionsCount ? Math.round(totalAccumulatedSec / sessionsCount) : 0;
-  const mediaPorTurno = mediaPorSesion;
 
   return {
     totalAccumulatedSec,
@@ -184,7 +381,6 @@ Object.values(perDia).forEach(d => {
     perDate,
     perDateObjetivos,
     mediaPorSesion,
-    mediaPorTurno,
     diasExitososCount,
     maxRacha,
     sessions,
@@ -192,7 +388,7 @@ Object.values(perDia).forEach(d => {
   };
 }
 
-/* ---------- UI builder ---------- */
+/* ---------- UI builder (basado en tu UI existente) ---------- */
 function buildBaseUI(root) {
   root.innerHTML = `
     <div id="stats-root" style="padding:12px;">
@@ -252,7 +448,6 @@ function buildBaseUI(root) {
 
           <div style="margin-top:10px;">
             <div><b>Media por sesión:</b> <span id="mediaSesionText">--</span></div>
-            <div><b>Media por turno:</b> <span id="mediaTurnoText">--</span></div>
             <div><b>Días exitosos (tot):</b> <span id="diasExitososText">--</span></div>
             <div><b>Máxima racha:</b> <span id="maxRachaText">--</span></div>
           </div>
@@ -264,7 +459,7 @@ function buildBaseUI(root) {
   `;
 }
 
-/* ---------- helpers UI ---------- */
+/* ---------- helpers UI (copiadas/adaptadas) ---------- */
 function buildDaysChecklist(dias) {
   const container = document.getElementById("daysChecklist");
   container.innerHTML = "";
@@ -273,7 +468,7 @@ function buildDaysChecklist(dias) {
     const row = document.createElement("div");
     row.style.display="flex"; row.style.alignItems="center"; row.style.gap="8px"; row.style.marginBottom="6px";
     const chk = document.createElement("input"); chk.type="checkbox"; chk.id=id; chk.value=d.dia; chk.checked=true;
-    chk.onchange = () => updateViews();
+    chk.onchange = () => updateViews(); // updateViews se define luego por closure
     const lbl = document.createElement("label"); lbl.htmlFor = id; lbl.innerHTML = `Día ${d.dia} — ${localStr(d.inicio)} → ${d.fin?localStr(d.fin):"(en curso)"}`;
     row.appendChild(chk); row.appendChild(lbl); container.appendChild(row);
   });
@@ -297,7 +492,7 @@ function getDateRange() {
   return { from, to };
 }
 
-/* ---------- charts ---------- */
+/* ---------- charts (usamos Chart.js) ---------- */
 let chartTimePerDay = null;
 let chartRacha = null;
 let chartByActivity = null;
@@ -306,7 +501,6 @@ async function renderCharts(metrics, registro, sessionsFiltered) {
   await ensureChartJs();
   const Chart = window.Chart;
 
-  // Time per day (bar)
   const selDays = new Set(getSelectedDays());
   const labels = []; const data = [];
   (registro.dias || []).slice().sort((a,b)=>a.dia - b.dia).forEach(d=>{
@@ -332,7 +526,7 @@ async function renderCharts(metrics, registro, sessionsFiltered) {
   });
 
   // Racha (línea)
-  const perDate = metrics.perDate || metrics.perDate || {};
+  const perDate = metrics.perDate || {};
   const dateKeys = Object.keys(metrics.perDate || {}).sort();
   const rachaLabels = [], rachaData = [];
   dateKeys.forEach(k => {
@@ -350,7 +544,7 @@ async function renderCharts(metrics, registro, sessionsFiltered) {
     options: { maintainAspectRatio:false, responsive:true, scales: { y: { ticks: { stepSize: 1 }, min: 0, max: 1 } } }
   });
 
-  // By activity (pie)
+  // By activity (pie/doughnut)
   const perAct = {};
   (sessionsFiltered || []).forEach(s => {
     const name = s.name || s.timerId || "sin_nombre";
@@ -462,173 +656,117 @@ function renderTableByDate(registro, metrics, sessionsFiltered) {
   wrap.appendChild(table);
 }
 
-/* ---------- main render (exposed) ---------- */
+/* ---------- función principal exportada ---------- */
 export async function renderStatsGeneral() {
   await ensureChartJs();
   const root = document.getElementById("statsGeneralEmbed");
   if (!root) { console.error("No existe #statsGeneralEmbed"); return; }
 
-  // Build UI skeleton first
+  // Construir UI base
   buildBaseUI(root);
 
-  // Try to get registroProcesado now (mode: only on enter)
-  function tryProceed(reg) {
-    try {
-      const registro = normalizeRegistro(reg);
-      const metrics = computeMetrics(registro);
+  // Extraer registro desde la tabla
+  const registro = buildRegistroFromTable();
+  if (!registro) {
+    root.innerHTML = `<div style="padding:12px; background:#fff; border-radius:8px;">No encontré la tabla de registro. Abre la sección "Registro de eventos" y pulsa "Refrescar ahora" para poblarla.</div>`;
+    return;
+  }
 
-      // fill summary
-      document.getElementById("totalAccum").textContent = `Tiempo total acumulado: ${secsToHHMMSS(metrics.totalAccumulatedSec)}`;
-      document.getElementById("totalDias").textContent = `Número de días totales transcurridos: ${metrics.numDias}`;
-      document.getElementById("totalFechas").textContent = `Número de fechas totales transcurridas: ${metrics.numFechas}`;
-      document.getElementById("mediaSesionText").textContent = secsToHHMMSS(metrics.mediaPorSesion);
-      document.getElementById("mediaTurnoText").textContent = secsToHHMMSS(metrics.mediaPorTurno);
-      document.getElementById("diasExitososText").textContent = metrics.diasExitososCount;
-      document.getElementById("maxRachaText").textContent = metrics.maxRacha;
+  // Normalizar y calcular métricas
+  const metrics = computeMetrics(registro);
 
-      // build checklist
-      buildDaysChecklist(registro.dias || []);
+  // rellenar resumen
+  document.getElementById("totalAccum").textContent = `Tiempo total acumulado: ${secsToHHMMSS(metrics.totalAccumulatedSec)}`;
+  document.getElementById("totalDias").textContent = `Número de días totales transcurridos: ${metrics.numDias}`;
+  document.getElementById("totalFechas").textContent = `Número de fechas totales transcurridas: ${metrics.numFechas}`;
+  document.getElementById("mediaSesionText").textContent = secsToHHMMSS(metrics.mediaPorSesion);
+  document.getElementById("diasExitososText").textContent = metrics.diasExitososCount;
+  document.getElementById("maxRachaText").textContent = metrics.maxRacha;
 
-      // set date inputs default range (first..last)
-      const dateKeys = Object.keys(metrics.perDate || {}).sort();
-      if (dateKeys.length) {
-        document.getElementById("filterDateFrom").value = dateKeys[0];
-        document.getElementById("filterDateTo").value = dateKeys[dateKeys.length - 1];
-      } else {
-        const t = new Date().toISOString().slice(0,10);
-        document.getElementById("filterDateFrom").value = t;
-        document.getElementById("filterDateTo").value = t;
-      }
+  // build checklist
+  buildDaysChecklist(registro.dias || []);
 
-      // wire buttons
-      document.getElementById("applyDateBtn").onclick = () => updateViews();
-      document.getElementById("clearDateBtn").onclick = () => { document.getElementById("filterDateFrom").value=""; document.getElementById("filterDateTo").value=""; updateViews(); };
-      document.getElementById("todayBtn").onclick = () => { const t = new Date().toISOString().slice(0,10); document.getElementById("filterDateFrom").value=t; document.getElementById("filterDateTo").value=t; updateViews(); };
-      document.getElementById("thisWeekBtn").onclick = () => {
-        const now = new Date(); const day = now.getDay();
-        const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-        const monday = new Date(now.setDate(diff)); const sunday = new Date(monday); sunday.setDate(monday.getDate()+6);
-        document.getElementById("filterDateFrom").value = monday.toISOString().slice(0,10);
-        document.getElementById("filterDateTo").value = sunday.toISOString().slice(0,10);
-        updateViews();
-      };
-      document.getElementById("thisMonthBtn").onclick = () => {
-        const now = new Date(); const first = new Date(now.getFullYear(), now.getMonth(), 1); const last = new Date(now.getFullYear(), now.getMonth()+1, 0);
-        document.getElementById("filterDateFrom").value = first.toISOString().slice(0,10);
-        document.getElementById("filterDateTo").value = last.toISOString().slice(0,10);
-        updateViews();
-      };
-
-      document.getElementById("exportCsvBtn").onclick = () => exportCsvFiltered(registro);
-
-      // initial draw
-      updateViews();
-
-      /* nested helpers */
-      function getSelectedDaySet(){ return new Set(getSelectedDays().map(x=>Number(x))); }
-
-      function updateViews(){
-        const selDays = getSelectedDaySet();
-        const dr = getDateRange();
-        const sessionsFiltered = (registro.sessions || []).filter(s => {
-          const okDay = (selDays.size === 0) ? true : (s.dia !== null && selDays.has(Number(s.dia)));
-          const okDate = (() => {
-            if(!dr) return true;
-            const d = new Date((s.dateKey || isoToDateKey(s.startTs)) + "T00:00:00");
-            if(dr.from && d < dr.from) return false;
-            if(dr.to && d > dr.to) return false;
-            return true;
-          })();
-          return okDay && okDate;
-        });
-
-        // update filtered metrics summary
-        const totalSecFiltered = sessionsFiltered.reduce((a,b)=>a + (Number(b.durationSec)||0), 0);
-        const sessionsCount = sessionsFiltered.length;
-        const avgPerSession = sessionsCount ? Math.round(totalSecFiltered / sessionsCount) : 0;
-        document.getElementById("mediaSesionText").textContent = secsToHHMMSS(avgPerSession);
-        document.getElementById("mediaTurnoText").textContent = secsToHHMMSS(avgPerSession);
-
-        // dias exitosos filtrados (work-day)
-        const diasExitososFiltrados = Object.values(metrics.perDia).filter(d => {
-          if (d.dia === null) return false;
-          if (selDays.size && !selDays.has(Number(d.dia))) return false;
-          if (dr && dr.from && dr.to) {
-            const intersect = (d.dateKeys || []).some(k => { const dd = new Date(k + "T00:00:00"); return dd >= dr.from && dd <= dr.to; });
-            if (!intersect) return false;
-          }
-          return (d.objetivoSecTotal && d.totalSec >= d.objetivoSecTotal);
-        }).length;
-        document.getElementById("diasExitososText").textContent = diasExitososFiltrados;
-
-        // tables
-        renderTableByDay(registro, metrics, sessionsFiltered);
-        renderTableByDate(registro, metrics, sessionsFiltered);
-
-        // charts
-        renderCharts(metrics, registro, sessionsFiltered);
-      }
-
-    } catch (err) {
-      console.error("Error procesando registro para estadísticas:", err);
-      root.innerHTML = `<div style="padding:12px; background:#fff; border-radius:8px;">Error calculando estadísticas: ${escapeHtml(err.message || String(err))}</div>`;
-    }
-  } // tryProceed
-
-  // If registroProcesado present -> proceed. Otherwise show message and offer to open Registro or force process if function available.
-  if (window.registroProcesado) {
-    // Precompute some perDate maps into metrics object for chart convenience
-    const reg = normalizeRegistro(window.registroProcesado);
-    // compute perDate caches used in charts
-    const metrics = computeMetrics(reg);
-    // attach caches to metrics for later use
-    metrics.perDate = {}; metrics.perDateObjetivos = {};
-    Object.entries(metrics.perDateObjetivos || {}).forEach(()=>{}); // noop to avoid lint
-    // Now call tryProceed with full registro (we will compute metrics again inside)
-    tryProceed(window.registroProcesado);
+  // set date inputs default range
+  const dateKeys = Object.keys(metrics.perDate || {}).sort();
+  if (dateKeys.length) {
+    document.getElementById("filterDateFrom").value = dateKeys[0];
+    document.getElementById("filterDateTo").value = dateKeys[dateKeys.length - 1];
   } else {
-    // show helpful panel
-    root.innerHTML = `
-      <div style="padding:12px; background:#fff; border-radius:8px;">
-        <div style="font-weight:700; margin-bottom:8px;">No se encontraron datos procesados (window.registroProcesado).</div>
-        <div style="margin-bottom:8px;">La sección Registro de eventos procesa los eventos y expone <code>window.registroProcesado</code>. Abre "Registro de eventos" y pulsa "Refrescar ahora", luego vuelve aquí.</div>
-        <div style="display:flex; gap:8px;"><button id="goRegistroBtn">Abrir Registro de eventos</button><button id="tryForceBtn">Intentar forzar procesado</button></div>
-      </div>
-    `;
-    document.getElementById("goRegistroBtn").onclick = () => { if (typeof openSection === "function") openSection('registroEventos'); else alert("Abre manualmente Registro de eventos."); };
-    document.getElementById("tryForceBtn").onclick = () => {
-      const possible = [window.renderRegistroEventos, window.procesarRegistro, window.buildRegistroProcesado];
-      const fn = possible.find(f => typeof f === "function");
-      if (fn) {
-        try {
-          // try with silent param
-          try { fn(true); } catch(e) { fn(); }
-          setTimeout(()=> { if (window.registroProcesado) { renderStatsGeneral(); } else alert("Procesado intentado pero registroProcesado sigue sin existir. Abre Registro manualmente."); }, 800);
-        } catch (err) {
-          alert("No se pudo forzar procesado: " + (err.message || err));
-        }
-      } else {
-        alert("No se detectó función de procesado en la página. Abre Registro y pulsa 'Refrescar ahora'.");
-      }
-    };
+    const t = new Date().toISOString().slice(0,10);
+    document.getElementById("filterDateFrom").value = t;
+    document.getElementById("filterDateTo").value = t;
+  }
 
-    // Also listen once for registroProcesadoReady event (if index dispatches it)
-    const handler = ev => {
-      try {
-        if (ev && ev.detail) tryProceed(ev.detail);
-        else if (window.registroProcesado) tryProceed(window.registroProcesado);
-      } catch (e) { console.error(e); }
-      window.removeEventListener('registroProcesadoReady', handler);
-    };
-    window.addEventListener('registroProcesadoReady', handler, { once: true });
+  // wire buttons
+  document.getElementById("applyDateBtn").onclick = () => updateViews();
+  document.getElementById("clearDateBtn").onclick = () => { document.getElementById("filterDateFrom").value=""; document.getElementById("filterDateTo").value=""; updateViews(); };
+  document.getElementById("todayBtn").onclick = () => { const t = new Date().toISOString().slice(0,10); document.getElementById("filterDateFrom").value=t; document.getElementById("filterDateTo").value=t; updateViews(); };
+  document.getElementById("thisWeekBtn").onclick = () => {
+    const now = new Date(); const day = now.getDay();
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(now.setDate(diff)); const sunday = new Date(monday); sunday.setDate(monday.getDate()+6);
+    document.getElementById("filterDateFrom").value = monday.toISOString().slice(0,10);
+    document.getElementById("filterDateTo").value = sunday.toISOString().slice(0,10);
+    updateViews();
+  };
+  document.getElementById("thisMonthBtn").onclick = () => {
+    const now = new Date(); const first = new Date(now.getFullYear(), now.getMonth(), 1); const last = new Date(now.getFullYear(), now.getMonth()+1, 0);
+    document.getElementById("filterDateFrom").value = first.toISOString().slice(0,10);
+    document.getElementById("filterDateTo").value = last.toISOString().slice(0,10);
+    updateViews();
+  };
+
+  document.getElementById("exportCsvBtn").onclick = () => exportCsvFiltered(registro);
+
+  // initial draw
+  updateViews();
+
+  /* closure helpers */
+  function getSelectedDaySet(){ return new Set(getSelectedDays().map(x=>Number(x))); }
+
+  function updateViews(){
+    const selDays = getSelectedDaySet();
+    const dr = getDateRange();
+    const sessionsFiltered = (registro.sessions || []).filter(s => {
+      const okDay = (selDays.size === 0) ? true : (s.dia !== null && selDays.has(Number(s.dia)));
+      const okDate = (() => {
+        if(!dr) return true;
+        const d = new Date((s.dateKey || isoToDateKey(s.startTs)) + "T00:00:00");
+        if(dr.from && d < dr.from) return false;
+        if(dr.to && d > dr.to) return false;
+        return true;
+      })();
+      return okDay && okDate;
+    });
+
+    // update filtered metrics summary
+    const totalSecFiltered = sessionsFiltered.reduce((a,b)=>a + (Number(b.durationSec)||0), 0);
+    const sessionsCount = sessionsFiltered.length;
+    const avgPerSession = sessionsCount ? Math.round(totalSecFiltered / sessionsCount) : 0;
+    document.getElementById("mediaSesionText").textContent = secsToHHMMSS(avgPerSession);
+
+    // dias exitosos filtrados
+    const diasExitososFiltrados = Object.values(metrics.perDia).filter(d => {
+      if (d.dia === null) return false;
+      if (selDays.size && !selDays.has(Number(d.dia))) return false;
+      if (dr && dr.from && dr.to) {
+        const intersect = (d.dateKeys || []).some(k => { const dd = new Date(k + "T00:00:00"); return dd >= dr.from && dd <= dr.to; });
+        if (!intersect) return false;
+      }
+      return (d.objetivoSecTotal && d.totalSec >= d.objetivoSecTotal);
+    }).length;
+    document.getElementById("diasExitososText").textContent = diasExitososFiltrados;
+
+    // tables
+    renderTableByDay(registro, metrics, sessionsFiltered);
+    renderTableByDate(registro, metrics, sessionsFiltered);
+
+    // charts
+    renderCharts(metrics, registro, sessionsFiltered);
   }
 }
 
-// expose for non-module usage fallback
-if (typeof window !== "undefined") window.renderStatsGeneral = window.renderStatsGeneral || renderStatsGeneral;
 
-// ❌ Línea problemática eliminada:
-// export { renderStatsGeneral };
 
 
 
