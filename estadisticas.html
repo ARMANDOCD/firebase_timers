@@ -3,417 +3,326 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Estadísticas (procesado fiable)</title>
+<title>Estadísticas</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-  body{font-family:Segoe UI, system-ui, -apple-system; padding:18px; background:#f5f6f8; color:#111}
-  .card{background:#fff;border-radius:10px;padding:14px;margin-bottom:14px;box-shadow:0 2px 8px rgba(0,0,0,0.06)}
+  body{font-family:Segoe UI,system-ui;padding:18px;background:#f5f6f8;color:#111}
+  .card{background:#fff;border-radius:10px;padding:14px;margin-bottom:14px;
+        box-shadow:0 2px 8px rgba(0,0,0,0.06)}
   h1{margin:0 0 8px}
   #filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
   select,input{padding:6px;border-radius:6px;border:1px solid #ddd}
   table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
   th,td{padding:8px;border-bottom:1px solid #eee;text-align:left}
   .small{font-size:12px;color:#666}
-  .mono{font-family:monospace}
 </style>
 </head>
+
 <body>
-  <h1>📊 Estadísticas</h1>
-  <div class="card small" id="info">
-    Esta página usa <b>registroProcesado</b> que genera el index. Si abriste desde el botón de Estadísticas en el index, los datos ya deberían estar en localStorage; si abriste manualmente, vuelve al index y pulsa "Estadísticas" para enviar los datos. En consola verás objetos de depuración (`window._estad_debug`).
-  </div>
+<h1>📊 Estadísticas</h1>
 
-  <div class="card">
-    <div id="filters">
-      <select id="filterDia"><option value="">Todos los días</option></select>
-      <select id="filterFecha"><option value="">Todas las fechas</option></select>
-      <input id="filterName" placeholder="Buscar actividad (nombre)" />
-      <button id="refreshBtn">🔁 Refrescar</button>
-      <div style="margin-left:auto" class="small" id="status">Esperando datos...</div>
-    </div>
-  </div>
+<div class="card small">
+  Esta página usa los datos guardados por tu Index en
+  <b>localStorage.registroProcesado</b>.
+</div>
 
-  <div class="card">
-    <h3>Resumen</h3>
-    <div id="resumen" class="small"></div>
+<div class="card">
+  <div id="filters">
+    <select id="filterDia"><option value="">Todos los días</option></select>
+    <select id="filterFecha"><option value="">Todas las fechas</option></select>
+    <input id="filterName" placeholder="Buscar actividad" />
+    <button id="refreshBtn">🔁 Actualizar</button>
+    <div style="margin-left:auto" id="status" class="small"></div>
   </div>
+</div>
 
-  <div class="card">
-    <h3>Tiempo por actividad</h3>
-    <canvas id="chartActividades" height="120"></canvas>
-  </div>
+<div class="card">
+  <h3>Resumen</h3>
+  <div id="resumen" class="small"></div>
+</div>
 
-  <div class="card">
-    <h3>Tiempo por día</h3>
-    <canvas id="chartDias" height="120"></canvas>
-  </div>
+<div class="card">
+  <h3>Tiempo por actividad</h3>
+  <canvas id="chartActividades" height="120"></canvas>
+</div>
 
-  <div class="card">
-    <h3>Sesiones</h3>
-    <table>
-      <thead>
-        <tr>
-          <th>Actividad</th><th>Día</th><th>Fecha</th><th>Inicio</th><th>Fin</th>
-          <th>Duración</th><th>Objetivo (min)</th><th>Cumplido</th>
-        </tr>
-      </thead>
-      <tbody id="tablaSesiones"></tbody>
-    </table>
-  </div>
+<div class="card">
+  <h3>Tiempo por día</h3>
+  <canvas id="chartDias" height="120"></canvas>
+</div>
+
+<div class="card">
+  <h3>Sesiones</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Actividad</th>
+        <th>Día</th>
+        <th>Fecha</th>
+        <th>Inicio</th>
+        <th>Fin</th>
+        <th>Duración</th>
+        <th>Objetivo (min)</th>
+        <th>Cumplido</th>
+      </tr>
+    </thead>
+    <tbody id="tablaSesiones"></tbody>
+  </table>
+</div>
 
 <script>
-/* --------------------------
-   Helpers de parsing/format
-   -------------------------- */
+
+/* ------------------------------
+   Formato B: YYYY-MM-DD HH:mm:ss
+   Hora Perú
+--------------------------------*/
+function toPeruString(ts) {
+  if (!ts) return "";
+  let d;
+  // Puede ser número o ISO string
+  if (typeof ts === "number") d = new Date(ts);
+  else d = new Date(ts);
+
+  if (isNaN(d.getTime())) return "";
+
+  return d.toLocaleString("sv-SE", {
+    timeZone: "America/Lima",
+    hour12: false
+  }).replace("T"," ");
+}
+
+/* Convertir segundos a texto */
+function formatSec(s){
+  s = Number(s||0);
+  const h = Math.floor(s/3600);
+  const m = Math.floor((s%3600)/60);
+  const se = s%60;
+  return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(se).padStart(2,"0")}`;
+}
+
 function $(id){ return document.getElementById(id); }
 
-function pad(n){ return String(n).padStart(2,'0'); }
-function formatSec(sec){
-  sec = Number(sec||0);
-  const h = Math.floor(sec/3600);
-  const m = Math.floor((sec%3600)/60);
-  const s = sec%60;
-  return `${h}h ${m}m ${s}s`;
-}
-function parseMarcaString(s){
-  if(s === null || s === undefined) return null;
-  if(typeof s === 'number') return Number(s);
-  const str = String(s).trim();
-  if(!str) return null;
-  const parts = str.split(':').map(x=>Number(x));
-  if(parts.length===3) return parts[0]*3600 + parts[1]*60 + parts[2];
-  if(parts.length===2) return parts[0]*60 + parts[1];
-  const n = Number(str);
-  return isNaN(n)?null:n;
-}
-
-/* Extrae elapsed probables de un objeto evento/sesion */
-function extractElapsed(obj){
-  if(!obj) return null;
-  // posibles campos en tus datos
-  const cand = ['endElapsed','startElapsed','elapsed','elapsedAntes','marcaElapsed','marcaSec','marca_seconds','marca'];
-  for(const k of cand){
-    if(obj[k] !== undefined && obj[k] !== null && obj[k] !== '') {
-      // si es string tipo "00:01:03" parsearlo
-      if(typeof obj[k] === 'string' && obj[k].includes(':')){
-        const p = parseMarcaString(obj[k]);
-        if(p !== null) return p;
-      }
-      // number-like
-      const num = Number(obj[k]);
-      if(!isNaN(num)) return num;
-    }
-  }
-  // si existe marca con formato text
-  if(obj.marca !== undefined && obj.marca !== null){
-    const p = parseMarcaString(obj.marca);
-    if(p !== null) return p;
-  }
-  return null;
-}
-
-/* Duración preferente entre par de eventos (startEv, endEv) */
-function durationFromPair(startEv, endEv){
-  // prefer numeric elapsed accumulated difference
-  const sVal = extractElapsed(startEv);
-  const eVal = extractElapsed(endEv);
-  if(sVal !== null && eVal !== null && eVal >= sVal) return Math.max(0, Math.floor(eVal - sVal));
-  // fallback marcas HH:MM:SS
-  const s1 = startEv.marca || startEv.marcaStr || startEv.marca_str;
-  const s2 = endEv.marca || endEv.marcaStr || endEv.marca_str;
-  if(s1 && s2){
-    const p1 = parseMarcaString(s1), p2 = parseMarcaString(s2);
-    if(p1 !== null && p2 !== null && p2 >= p1) return Math.max(0, p2 - p1);
-  }
-  // ultima opcion: timestamps (segundos)
-  try {
-    const st = new Date(startEv.startTs || startEv.timestamp || startEv.ts).getTime();
-    const en = new Date(endEv.endTs || endEv.timestamp || endEv.ts).getTime();
-    if(!isNaN(st) && !isNaN(en) && en >= st) return Math.floor((en - st)/1000);
-  } catch(e){}
-  return 0;
-}
-
-/* --------------------------
-   Cargar datos: dos caminos
-   - evento 'registroProcesadoReady' (index despacha)
-   - localStorage.registroProcesado (botón del index guarda)
-   -------------------------- */
-
+/* Cargar datos */
 let registro = null;
 
-function onRegistroReady(r){
-  registro = r;
-  if(!registro) return;
-  // normalizar timersMeta (asegurar target numeric y name)
-  registro.timersMeta = registro.timersMeta || {};
-  for(const k of Object.keys(registro.timersMeta)){
-    const v = registro.timersMeta[k];
-    // campos posibles: target / targetMin etc
-    const target = (v && (v.target || v.targetMin || v.targetMinutes)) ? Number(v.target || v.targetMin || v.targetMinutes) : (v && v.target === 0 ? 0 : (v && v.targetMin === 0 ? 0 : (v && v.targetMinutes === 0 ? 0 : (v && v.target ? Number(v.target) : (v && v.targetMin ? Number(v.targetMin) : 0)))));
-    registro.timersMeta[k].targetMin = isNaN(target) ? 0 : target;
-    registro.timersMeta[k].name = v.name || v.nombre || v.timerName || v.title || v.titleName || k;
-  }
-
-  // reconstruir sesiones garantizando duración correcta (priorizar elapsed)
-  registro.sessions = (registro.sessions || []).map(s => {
-    // puede que sesiones ya traigan startElapsed/endElapsed; si no, intentamos extraer de 'raw' si existe
-    const startEv = { startTs: s.startTs, timestamp: s.startTs, marca: s.marca, startElapsed: s.startElapsed, elapsedAntes: s.startElapsed, ... (s.rawStart || {}) };
-    const endEv   = { endTs: s.endTs, timestamp: s.endTs, marca: s.marcaEnd || s.marca, endElapsed: s.endElapsed, elapsed: s.endElapsed, ... (s.rawEnd || {}) };
-
-    // But s may already include startElapsed/endElapsed
-    const duration = ( (s.startElapsed !== undefined && s.endElapsed !== undefined && s.endElapsed !== null) ? 
-                        Math.max(0, Number(s.endElapsed) - Number(s.startElapsed)) :
-                        durationFromPair(s, endEv) );
-    return {
-      ...s,
-      durationSec: Number(s.durationSec) || duration || 0
-    };
-  });
-
-  // expose debug
-  window._estad_debug = {
-    rawRegistro: registro,
-    sessions: registro.sessions,
-    timersMeta: registro.timersMeta
-  };
-  console.log("registroProcesado (normalizado) -> window._estad_debug", window._estad_debug);
-
-  // render inicial
-  populateFiltersAndRender();
-  $('status').textContent = "Datos listos: sesiones=" + registro.sessions.length + " | timersMeta=" + Object.keys(registro.timersMeta).length;
-}
-
-/* Intentar recuperar desde localStorage al cargar */
-function tryLoadFromLocalStorage(){
+function loadRegistro(){
+  const raw = localStorage.getItem("registroProcesado");
+  if (!raw) return null;
   try {
-    const raw = localStorage.getItem("registroProcesado");
-    if(!raw) return false;
-    const r = JSON.parse(raw);
-    onRegistroReady(r);
-    return true;
+    return JSON.parse(raw);
   } catch(e){
-    console.warn("No se pudo parsear local registroProcesado:", e);
-    return false;
+    console.error("Error parsing registroProcesado:", e);
+    return null;
   }
 }
 
-/* Escuchar evento (index lo despacha) */
-window.addEventListener('registroProcesadoReady', e => {
-  if(e && e.detail) {
-    onRegistroReady(e.detail);
-  }
-});
-
-/* Si ya hay en localStorage, cargar ahora */
-if(!tryLoadFromLocalStorage()){
-  $('status').textContent = "Esperando `registroProcesado`... (abre el index y pulsa Estadísticas)";
+function escapeHtml(u){
+  if (!u) return "";
+  return String(u).replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
 }
 
-/* --------------------------
-   Construcción de meta final (buscar objetivo por timerId, o por nombre)
-   -------------------------- */
-
-function getMetaForTimer(timerId, name){
-  const tm = registro && registro.timersMeta ? registro.timersMeta : {};
-  if(!tm) return { targetMin:0, name: name || timerId };
-  if(timerId && tm[timerId]) return { targetMin: Number(tm[timerId].target || tm[timerId].targetMin || 0), name: tm[timerId].name || name || timerId };
-  // fallback: buscar por nombre (coincidencia)
-  for(const k of Object.keys(tm)){
-    const entry = tm[k];
-    if(entry && (entry.name === name || entry.name === (name || '').toString())) {
-      return { targetMin: Number(entry.target || entry.targetMin || 0), name: entry.name };
+/* Obtener meta */
+function getMeta(tid, name){
+  const tm = registro.timersMeta || {};
+  if (tid && tm[tid]) {
+    const t = Number(tm[tid].target || tm[tid].targetMin || tm[tid].targetMinutes || 0) || 0;
+    return { targetMin: t, name: tm[tid].name || name || tid };
+  }
+  // fallback por nombre
+  for (const k of Object.keys(tm)){
+    if (tm[k].name === name) {
+      const t = Number(tm[k].target || tm[k].targetMin || tm[k].targetMinutes || 0) || 0;
+      return { targetMin: t, name: tm[k].name };
     }
   }
-  return { targetMin:0, name: name || timerId };
+  return { targetMin: 0, name: name || tid };
 }
 
-/* --------------------------
-   UI: filtros y render
-   -------------------------- */
+/* Filtros */
+function filtrar(){
+  if (!registro) return [];
+  const d  = $('filterDia').value;
+  const f  = $('filterFecha').value;
+  const q  = $('filterName').value.trim().toLowerCase();
 
-function populateFiltersAndRender(){
-  if(!registro) return;
-  const dias = registro.dias || [];
-  const ses = registro.sessions || [];
-
-  const fd = $('filterDia');
-  fd.innerHTML = `<option value="">Todos los días</option>`;
-  dias.forEach(d => fd.innerHTML += `<option value="${d.dia}">Día ${d.dia}</option>`);
-
-  const fechas = [...new Set(ses.map(s=>s.dateKey).filter(x=>x))].sort();
-  const ff = $('filterFecha');
-  ff.innerHTML = `<option value="">Todas las fechas</option>`;
-  fechas.forEach(f => ff.innerHTML += `<option value="${f}">${f}</option>`);
-
-  $('filterName').value = '';
-  refrescarTodo();
+  return registro.sessions
+    .filter(s => {
+      if (d && String(s.dia) !== String(d)) return false;
+      if (f && s.dateKey !== f) return false;
+      if (q && !(s.name||"").toLowerCase().includes(q)) return false;
+      return true;
+    })
+    .sort((a,b)=> new Date(a.startTs) - new Date(b.startTs));
 }
 
-/* filtrado */
-function filtrarSesiones(){
-  if(!registro) return [];
-  const lista = registro.sessions || [];
-  const d = $('filterDia').value;
-  const f = $('filterFecha').value;
-  const q = $('filterName').value.trim().toLowerCase();
-  return lista.filter(s=>{
-    if(d && String(s.dia) !== String(d)) return false;
-    if(f && s.dateKey !== f) return false;
-    if(q && (!(s.name || '').toLowerCase().includes(q))) return false;
-    return true;
-  }).sort((a,b)=> new Date(a.startTs) - new Date(b.startTs));
-}
-
-/* Render tabla con acumulado por timer hasta cada fila */
+/* Tabla */
 function renderTabla(){
-  const lista = filtrarSesiones();
-  const tbody = $('tablaSesiones');
-  tbody.innerHTML = '';
+  const lista = filtrar();
+  const tb = $('tablaSesiones');
+  tb.innerHTML = "";
+
   const acumulado = {};
-  lista.forEach(s=>{
-    const tid = s.timerId || '__noid__';
-    acumulado[tid] = (acumulado[tid] || 0) + Number(s.durationSec || 0);
-    const meta = getMetaForTimer(s.timerId, s.name);
-    const objetivoMin = Number(meta.targetMin || 0);
+
+  lista.forEach(s => {
+    const tid = s.timerId || "_";
+    acumulado[tid] = (acumulado[tid] || 0) + Number(s.durationSec||0);
+
+    const meta = getMeta(s.timerId, s.name);
+    const objetivoMin = meta.targetMin || 0;
     const objetivoSec = objetivoMin * 60;
-    let cumpl = '—';
-    if(objetivoSec > 0) cumpl = (acumulado[tid] >= objetivoSec) ? '✔' : '✖';
-    const tr = document.createElement('tr');
+
+    const cumplido = objetivoSec > 0
+      ? (acumulado[tid] >= objetivoSec ? "✔" : "✖")
+      : "—";
+
+    const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${escapeHtml(s.name || meta.name || s.timerId)}</td>
-      <td>${s.dia || ''}</td>
-      <td>${s.dateKey || ''}</td>
-      <td>${s.startTs ? new Date(s.startTs).toLocaleString() : ''}</td>
-      <td>${s.endTs ? new Date(s.endTs).toLocaleString() : ''}</td>
-      <td>${formatSec(Number(s.durationSec||0))}</td>
+      <td>${escapeHtml(meta.name)}</td>
+      <td>${s.dia||""}</td>
+      <td>${s.dateKey||""}</td>
+      <td>${toPeruString(s.startTs)}</td>
+      <td>${toPeruString(s.endTs)}</td>
+      <td>${formatSec(s.durationSec)}</td>
       <td>${objetivoMin}</td>
-      <td>${cumpl}</td>
+      <td>${cumplido}</td>
     `;
-    tbody.appendChild(tr);
+    tb.appendChild(tr);
   });
-  // exponer debug para inspección rápida
-  window._estad_debug = window._estad_debug || {};
-  window._estad_debug.sessionsFiltered = lista;
-  console.log("DEBUG sesiones filtradas:", lista.slice(0,30));
 }
 
-/* Resumen y racha */
-function calcularRachaYResumen(){
-  const lista = filtrarSesiones();
-  const resumenDiv = $('resumen');
+/* Rachas y resumen */
+function renderResumen(){
+  const lista = filtrar();
+  const total = lista.reduce((a,b)=> a + Number(b.durationSec||0), 0);
 
-  const total = lista.reduce((a,b)=>a + Number(b.durationSec || 0), 0);
-  const diasSet = new Set(lista.map(s=>s.dia).filter(x=>x!=null));
-  const fechasSet = new Set(lista.map(s=>s.dateKey).filter(x=>x!=null));
+  const dias = [...new Set(lista.map(s=>s.dia).filter(x=>x!=null))];
+  const fechas = [...new Set(lista.map(s=>s.dateKey).filter(x=>x))];
 
-  // calcular trabajado por dia y timers por dia
   const trabajadoPorDia = {};
   const timersPorDia = {};
+
   lista.forEach(s=>{
-    if(s.dia == null) return;
-    trabajadoPorDia[s.dia] = (trabajadoPorDia[s.dia] || 0) + Number(s.durationSec || 0);
+    if (s.dia==null) return;
+    trabajadoPorDia[s.dia] = (trabajadoPorDia[s.dia]||0) + Number(s.durationSec||0);
     timersPorDia[s.dia] = timersPorDia[s.dia] || new Set();
-    if(s.timerId) timersPorDia[s.dia].add(s.timerId);
+    if (s.timerId) timersPorDia[s.dia].add(s.timerId);
   });
 
-  // sumar objetivos por dia (solo timers que participaron ese dia)
   const objetivosPorDia = {};
   Object.keys(timersPorDia).forEach(d=>{
     let sum = 0;
     timersPorDia[d].forEach(tid=>{
-      const m = getMetaForTimer(tid).targetMin || 0;
-      sum += Number(m) * 60;
+      const meta = getMeta(tid);
+      sum += (meta.targetMin||0)*60;
     });
     objetivosPorDia[d] = sum;
   });
 
-  // calcular racha
-  const diasOrdenados = Object.keys(trabajadoPorDia).map(Number).sort((a,b)=>a-b);
-  let maxRacha = 0, rachaActual = 0, prev=null;
-  diasOrdenados.forEach(d=>{
-    const cumplido = (objetivosPorDia[d] && objetivosPorDia[d] > 0) ? (trabajadoPorDia[d] >= objetivosPorDia[d]) : false;
-    if(prev === null || d === prev + 1){
-      rachaActual = cumplido ? rachaActual + 1 : 0;
-    } else {
-      rachaActual = cumplido ? 1 : 0;
-    }
-    maxRacha = Math.max(maxRacha, rachaActual);
+  // racha
+  let racha=0, maxRacha=0, prev=null;
+  const diasOrd = Object.keys(trabajadoPorDia).map(Number).sort((a,b)=>a-b);
+
+  diasOrd.forEach(d=>{
+    const cumpl = objetivosPorDia[d] > 0 && trabajadoPorDia[d] >= objetivosPorDia[d];
+    if (prev===null || d===prev+1) racha = cumpl ? racha+1 : 0;
+    else racha = cumpl ? 1 : 0;
+    maxRacha = Math.max(maxRacha, racha);
     prev = d;
   });
 
-  resumenDiv.innerHTML = `
+  $('resumen').innerHTML = `
     <p><b>Tiempo total:</b> ${formatSec(total)}</p>
-    <p><b>Días trabajados:</b> ${diasSet.size}</p>
-    <p><b>Fechas únicas:</b> ${fechasSet.size}</p>
-    <p><b>Racha máxima (días cumplidos):</b> ${maxRacha}</p>
+    <p><b>Días trabajados:</b> ${dias.length}</p>
+    <p><b>Fechas únicas:</b> ${fechas.length}</p>
+    <p><b>Racha máxima:</b> ${maxRacha}</p>
   `;
-
-  // exponer para debugging
-  window._estad_debug = window._estad_debug || {};
-  window._estad_debug.trabajadoPorDia = trabajadoPorDia;
-  window._estad_debug.objetivosPorDia = objetivosPorDia;
-  window._estad_debug.maxRacha = maxRacha;
 }
 
-/* Graficas */
-let chartAct = null, chartDias = null;
-function renderGraficas(){
-  const lista = filtrarSesiones();
-  const aggAct = {}, aggDia = {};
-  lista.forEach(s=>{
-    const name = s.name || getMetaForTimer(s.timerId).name || s.timerId || 'sin nombre';
-    aggAct[name] = (aggAct[name] || 0) + Number(s.durationSec||0);
-    const diaKey = s.dia || 'sin';
-    aggDia[diaKey] = (aggDia[diaKey] || 0) + Number(s.durationSec||0);
-  });
+/* Gráficas */
+let chartAct=null, chartDia=null;
 
-  const labelsAct = Object.keys(aggAct);
-  const valuesAct = Object.values(aggAct);
+function renderGraficas(){
+  const lista = filtrar();
+
+  const act = {}, dia={};
+
+  lista.forEach(s=>{
+    const n = s.name || getMeta(s.timerId).name || s.timerId || "—";
+    act[n] = (act[n]||0) + Number(s.durationSec||0);
+    const dk = s.dia || "—";
+    dia[dk] = (dia[dk]||0) + Number(s.durationSec||0);
+  });
 
   if(chartAct) chartAct.destroy();
-  chartAct = new Chart($('chartActividades'), {
-    type:'bar',
-    data:{ labels: labelsAct, datasets:[{ label:'Segundos', data: valuesAct }] }
+  chartAct = new Chart($("chartActividades"), {
+    type:"bar",
+    data:{
+      labels:Object.keys(act),
+      datasets:[{label:"Segundos",data:Object.values(act)}]
+    }
   });
 
-  const labelsDia = Object.keys(aggDia).map(k => k === 'sin' ? 'sin día' : 'Día ' + k);
-  const valuesDia = Object.values(aggDia);
-  if(chartDias) chartDias.destroy();
-  chartDias = new Chart($('chartDias'), {
-    type:'line',
-    data:{ labels: labelsDia, datasets:[{ label:'Segundos', data: valuesDia, tension:0.25 }] }
+  if(chartDia) chartDia.destroy();
+  chartDia = new Chart($("chartDias"), {
+    type:"line",
+    data:{
+      labels:Object.keys(dia).map(d=> d==="—" ? "Sin día" : `Día ${d}`),
+      datasets:[{label:"Segundos",data:Object.values(dia),tension:0.25}]
+    }
   });
 }
 
-/* Evitar XSS simple al mostrar nombres */
-function escapeHtml(u){ if(u==null) return ''; return String(u).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+/* Inicializar filtros */
+function initFilters(){
+  const fd = $('filterDia');
+  fd.innerHTML = `<option value="">Todos los días</option>`;
+  (registro.dias||[])
+    .sort((a,b)=>a.dia-b.dia)
+    .forEach(d=>{
+      fd.innerHTML += `<option value="${d.dia}">Día ${d.dia}</option>`;
+    });
+
+  const fechas = [...new Set((registro.sessions||[]).map(s=>s.dateKey).filter(x=>x))].sort();
+  const ff = $('filterFecha');
+  ff.innerHTML = `<option value="">Todas las fechas</option>`;
+  fechas.forEach(f => ff.innerHTML += `<option value="${f}">${f}</option>`);
+}
 
 /* Refrescar todo */
-function refrescarTodo(){
-  if(!registro){ $('status').textContent = "Sin datos (esperando)"; return; }
+function refrescar(){
+  if (!registro){
+    $('status').textContent = "Sin datos";
+    return;
+  }
   renderTabla();
-  calcularRachaYResumen();
+  renderResumen();
   renderGraficas();
+  $('status').textContent = "Listo";
 }
-$('refreshBtn').onclick = refrescarTodo;
-$('filterDia').onchange = refrescarTodo;
-$('filterFecha').onchange = refrescarTodo;
-$('filterName').oninput = () => setTimeout(refrescarTodo, 250);
 
-/* --------------------------
-   Exponer helper y trigger
-   -------------------------- */
-window._estad_debug = window._estad_debug || {};
-// si los datos ya estaban en localStorage, already processed in onRegistroReady
-// si vinieron por evento lo llamó el listener
+/* START */
+registro = loadRegistro();
 
-/* Si ya había registro (por ejemplo index lo guardó y no disparó evento), forzar render */
-if(registro) populateFiltersAndRender();
+if (!registro) {
+  $('status').textContent = "No hay registroProcesado en localStorage";
+} else {
+  $('status').textContent = "Cargando...";
+  initFilters();
+  refrescar();
+}
+
+/* eventos */
+$('refreshBtn').onclick = refrescar;
+$('filterDia').onchange = refrescar;
+$('filterFecha').onchange = refrescar;
+$('filterName').oninput = () => setTimeout(refrescar,250);
 
 </script>
+
 </body>
 </html>
+
+
 
 
 
