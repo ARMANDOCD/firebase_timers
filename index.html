@@ -610,10 +610,19 @@ window.toggleTimer = async i => {
     t.running = true;
 t.startedAt = Date.now(); // temporal local mientras guardamos
 
-await set(ref(db, ...), {
-  ...t,
-  startedAt: serverTimestamp()  // <-- aquí se asigna el tiempo real del servidor
+await set(ref(db, `usuarios/${currentUid}/cronometros/diaActual/timers/${i}`), {
+  name: t.name,
+  target: t.target,
+  note: t.note,
+  elapsed: t.elapsed,
+  running: true,
+  completed: t.completed,
+  createdAt: t.createdAt,
+
+  // propiedad sobrescrita
+  startedAt: serverTimestamp()
 });
+
 
     await save();
 
@@ -1093,6 +1102,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
