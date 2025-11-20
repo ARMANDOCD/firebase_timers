@@ -945,51 +945,42 @@ eventosArr.forEach(ev => {
     const startElapsed = startEv.elapsedAntes !== undefined ? startEv.elapsedAntes : (startEv.elapsed || null);
     const endElapsed = endEv.elapsed !== undefined ? endEv.elapsed : (endEv.elapsedAntes !== undefined ? endEv.elapsedAntes : null);
     // --- Cálculo REAL de duración usando los mismos criterios que la tabla ---
-function calcDuracion(startEv, endEv){
-  const start = (
-      startEv.startElapsed ??
-      startEv.elapsedAntes ??
-      startEv.elapsed ??
-      null
-  );
-
-  const end = (
-      endEv.endElapsed ??
-      endEv.elapsed ??
-      endEv.elapsedAntes ??
-      null
-  );
-
-  if (start !== null && end !== null && end >= start) {
-    return end - start;
-  }
-
-  // marcas HH:MM:SS
-  function parseMarca(m){
-    if (!m) return null;
-    const p = String(m).split(":").map(Number);
-    if (p.length === 3) return p[0]*3600 + p[1]*60 + p[2];
-    if (p.length === 2) return p[0]*60 + p[1];
-    return null;
-  }
-
-  const m1 = parseMarca(startEv.marca);
-  const m2 = parseMarca(endEv.marca);
-  if (m1 !== null && m2 !== null && m2 >= m1){
-    return m2 - m1;
-  }
-
-  // fallback: timestamps
-  try{
-    const t1 = new Date(startEv.timestamp).getTime();
-    const t2 = new Date(endEv.timestamp).getTime();
-    if(!isNaN(t1) && !isNaN(t2) && t2 >= t1){
-      return Math.floor((t2 - t1)/1000);
+function calcDuracion(startEv, endEv) {
+    // Leer marca como HH:MM:SS (preferido)
+    function parseMarca(m) {
+        if (!m) return null;
+        const p = m.split(":").map(Number);
+        if (p.length === 3) return p[0]*3600 + p[1]*60 + p[2];
+        return null;
     }
-  }catch(e){}
 
-  return 0;
+    // 1) INTENTAR por marca
+    const m1 = parseMarca(startEv.marca);
+    const m2 = parseMarca(endEv.marca);
+    if (m1 !== null && m2 !== null && m2 >= m1) {
+        return m2 - m1;
+    }
+
+    // 2) INTENTAR por elapsed acumulado
+    const sEl = startEv.startElapsed ?? startEv.elapsedAntes ?? startEv.elapsed ?? null;
+    const eEl = endEv.endElapsed ?? endEv.elapsed ?? endEv.elapsedAntes ?? null;
+
+    if (sEl !== null && eEl !== null && eEl >= sEl) {
+        return eEl - sEl;
+    }
+
+    // 3) Fallback final: timestamps
+    try {
+        const t1 = Date.parse(startEv.timestamp);
+        const t2 = Date.parse(endEv.timestamp);
+        if (!isNaN(t1) && !isNaN(t2) && t2 >= t1) {
+            return Math.floor((t2 - t1) / 1000);
+        }
+    } catch(e){}
+
+    return 0;
 }
+
 
 let durationSec = calcDuracion(startEv, endEv);
 
@@ -1153,6 +1144,7 @@ document.getElementById("btnEstadisticas").onclick = () => {
 
 </body>
 </html>
+
 
 
 
