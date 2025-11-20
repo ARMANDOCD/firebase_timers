@@ -164,10 +164,6 @@
 <div id="menu">
   <button onclick="openSection('mainPage')">🏠 Cronómetros</button>
   <button id="btnEstadisticas">📊 Estadísticas Generales</button>
-
-
-
-
   <button onclick="openSection('statsPersonal')">👤 Estadísticas Individuales</button>
   <!-- NUEVO BOTÓN -->
   <button onclick="openSection('registroEventos')">📜 Registro de eventos</button>
@@ -356,9 +352,18 @@ onAuthStateChanged(auth, user => {
 });
 
 document.getElementById("btnEstadisticas").onclick = () => {
-    if (!currentUid) return alert("Debes iniciar sesión");
-    window.open(`estadisticas.html?uid=${currentUid}`, "_blank");
+    if (!window.registroProcesado) {
+        alert("Todavía no se generó el registro de eventos.");
+        return;
+    }
+
+    // Guardamos el JSON completo en localStorage
+    localStorage.setItem("registroProcesado", JSON.stringify(window.registroProcesado));
+
+    // Abrimos estadísticas sin parámetros
+    window.open("estadisticas.html", "_blank");
 };
+
 
 /* -------- CARGA DE DATOS -------- */
 function listen() {
@@ -1089,6 +1094,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
