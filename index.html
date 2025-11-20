@@ -163,7 +163,10 @@
 <!-- 🔵 MENU SUPERIOR -->
 <div id="menu">
   <button onclick="openSection('mainPage')">🏠 Cronómetros</button>
-  <button onclick="window.open('estadisticas.html', '_blank')">📊 Estadísticas Generales</button>
+  <button onclick="window.open('estadisticas.html?uid=' + currentUid, '_blank')">
+    📊 Estadísticas Generales
+</button>
+
 
 
   <button onclick="openSection('statsPersonal')">👤 Estadísticas Individuales</button>
@@ -1083,6 +1086,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
