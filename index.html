@@ -336,6 +336,7 @@ onAuthStateChanged(auth, user => {
     // iniciar escucha del historial de eventos en la sección registro (se activará en renderRegistroEventos)
     // pero podemos preparar el ref
     eventosRefGlobal = ref(db, `usuarios/${user.uid}/historialEventos`);
+await generarRegistroProcesado();
 
   } else {
 
@@ -349,6 +350,7 @@ onAuthStateChanged(auth, user => {
     timers = [];
     renderTimers();
   }
+  
 });
 
 
@@ -1086,16 +1088,138 @@ async function renderRegistroEventos(){
   }); // onValue
 } // renderRegistroEventos
 
- document.getElementById("btnEstadisticas").onclick = () => {
-    if (!window.registroProcesado) {
-        alert("Todavía no se generó el registro de eventos.");
-        return;
+async function generarRegistroProcesado() {
+    if (!currentUid) return;
+
+    const eventosRef = ref(db, `usuarios/${currentUid}/historialEventos`);
+    const snap = await get(eventosRef);
+    const raw = snap.val() || {};
+
+    const eventosArr = Object.entries(raw)
+        .map(([id, val]) => ({ id, ...val }))
+        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    // ======== CONSTRUIR DIAS ========
+    const dias = [];
+    const inicios = eventosArr.filter(e => e.tipo === "dia_iniciado");
+    const finales = eventosArr.filter(e => e.tipo === "dia_finalizado");
+    const usedFinal = new Set();
+
+    inicios.forEach((ini, idx) => {
+        const iniTs = new Date(ini.timestamp);
+        let finMatch = null;
+
+        for (let i = 0; i < finales.length; i++) {
+            if (usedFinal.has(i)) continue;
+            const fin = finales[i];
+            if (new Date(fin.timestamp) >= iniTs) {
+                finMatch = fin;
+                usedFinal.add(i);
+                break;
+            }
+        }
+
+        dias.push({
+            dia: idx + 1,
+            inicio: ini.timestamp,
+            fin: finMatch ? finMatch.timestamp : null,
+            rawInicio: ini,
+            rawFin: finMatch
+        });
+    });
+
+    // ======== CONSTRUIR timersMeta ========
+    const timersMeta = {};
+    eventosArr.forEach(ev => {
+        if (ev.tipo === "timer_creado" && ev.timerId) {
+            timersMeta[ev.timerId] = {
+                name: ev.name || ev.timerId,
+                target: ev.target || 0,
+                createdAt: ev.timestamp
+            };
+        }
+    });
+
+    // ======== CONSTRUIR SESIONES ========
+    const openMap = {};
+    const sessions = [];
+
+    function parseMarca(m) {
+        if (!m) return null;
+        const p = m.split(":").map(x => Number(x));
+        if (p.length === 3) return p[0] * 3600 + p[1] * 60 + p[2];
+        return Number(m);
     }
 
-    localStorage.setItem("registroProcesado", JSON.stringify(window.registroProcesado));
+    function extractElapsed(ev) {
+        if (!ev) return null;
+        const cand = ["endElapsed", "startElapsed", "elapsed", "elapsedAntes"];
+        for (const c of cand) {
+            if (ev[c] !== undefined && ev[c] !== null) return Number(ev[c]);
+        }
+        if (ev.marca) return parseMarca(ev.marca);
+        return null;
+    }
 
+    function durationFromPair(a, b) {
+        const sa = extractElapsed(a);
+        const sb = extractElapsed(b);
+
+        if (sa !== null && sb !== null && sb >= sa) return sb - sa;
+
+        return Math.floor((new Date(b.timestamp) - new Date(a.timestamp)) / 1000);
+    }
+
+    eventosArr.forEach(ev => {
+        const t = ev.tipo;
+        const tid = ev.timerId;
+
+        if (t === "timer_iniciado") {
+            openMap[tid] = ev;
+        } else if (["timer_pausado", "timer_reseteado", "timer_completado", "timer_borrado"].includes(t)) {
+            const startEv = openMap[tid];
+            if (!startEv) return;
+
+            const dur = durationFromPair(startEv, ev);
+
+            let diaNum = null;
+            for (const d of dias) {
+                const s = new Date(d.inicio);
+                const e = d.fin ? new Date(d.fin) : null;
+                const st = new Date(startEv.timestamp);
+                if (e) {
+                    if (st >= s && st <= e) diaNum = d.dia;
+                } else {
+                    if (st >= s) diaNum = d.dia;
+                }
+            }
+
+            sessions.push({
+                timerId: tid,
+                name: startEv.name || (timersMeta[tid] && timersMeta[tid].name),
+                startTs: startEv.timestamp,
+                endTs: ev.timestamp,
+                durationSec: dur,
+                dia: diaNum,
+                dateKey: startEv.timestamp.slice(0, 10)
+            });
+
+            delete openMap[tid];
+        }
+    });
+
+    // ------ GUARDAR -------
+    window.registroProcesado = { dias, sessions, timersMeta };
+    localStorage.setItem("registroProcesado", JSON.stringify(window.registroProcesado));
+    console.log("registroProcesado generado", window.registroProcesado);
+}
+
+  
+ document.getElementById("btnEstadisticas").onclick = async () => {
+    await generarRegistroProcesado();
     window.open("estadisticas.html", "_blank");
-}; 
+};
+
 
 // utilidad mínima para escapar HTML en nombres/strings
 function escapeHtml(unsafe) {
@@ -1120,6 +1244,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
