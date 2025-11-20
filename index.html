@@ -628,9 +628,14 @@ await set(ref(db, ...), {
     const nowIso = new Date().toISOString();
 
     if (t.startedAt) {
-      const deltaSec = Math.floor((new Date(nowIso) - new Date(t.startedAt)) / 1000);
-      t.elapsed += Math.max(0, deltaSec);     // 🔥 Se calcula el tiempo REAL
-      delete t.startedAt;
+      const start = t.startedAtServer;   // tiempo del servidor
+const end = Date.now();            // temporal
+const delta = Math.floor((end - start) / 1000);
+
+t.elapsed += delta;
+t.running = false;
+t.startedAtServer = null;
+
     }
 
     t.running = false;
@@ -1088,6 +1093,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
