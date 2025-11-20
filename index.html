@@ -317,6 +317,8 @@ let timers = [];
 let dayStarted = null;
 let dayEnded = null;
 let currentUid = null;
+  let filas = [];
+
 
 // Para asegurar que "timer completado" solo se loguea una vez por timer por sesión:
 const loggedCompletions = new Set();
@@ -880,7 +882,7 @@ async function renderRegistroEventos(){
     const eventosParaTabla = eventosArr; // incluir todo, luego filtramos visualmente
 
     // Preparamos filas
-    const filas = eventosParaTabla.map(ev => {
+    filas = eventosParaTabla.map(ev => {
       // Determinar día
       const dia = findDiaForTimestamp(ev.timestamp);
 
@@ -1257,6 +1259,7 @@ localStorage.setItem("registroFilas", JSON.stringify(filas));
 
 </body>
 </html>
+
 
 
 
