@@ -357,6 +357,13 @@ function listen() {
   onValue(dbRef, snap => {
     const data = snap.val() || {};
     timers = data.timers || [];
+    timers.forEach(t => {
+  if (t.running) {
+    // reconstruimos solo la parte real
+    t.startedAt = performance.now(); // punto START fresco
+  }
+});
+
     dayStarted = data.dayStarted || null;
     dayEnded = data.dayEnded || null;
     // Resetear loggedCompletions si cambiaste de día (evita duplicados en sesión nueva)
@@ -1089,6 +1096,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
