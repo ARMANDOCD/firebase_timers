@@ -356,122 +356,28 @@ onAuthStateChanged(auth, user => {
 function listen() {
   onValue(dbRef, snap => {
     const data = snap.val() || {};
-    const incoming = (data.timers || []).map(t => {
-      const copy = { ...t };
-
-      // asegurar updatedAt como número
-      copy.updatedAt = Number(copy.updatedAt || 0);
-
-      // startedAt puede venir como ISO o número
-      if (copy.startedAt && typeof copy.startedAt === "string") {
-        const ms = Date.parse(copy.startedAt);
-        copy.startedAt = isNaN(ms) ? null : ms;
-      }
-
-      return copy;
-    });
-
-    // PRIMERA CARGA LOCAL
-    if (timers.length === 0 && incoming.length > 0) {
-      timers = incoming.map(t => ({ ...t }));
-    } else {
-      // MERGE CONTROLADO POR updatedAt
-      incoming.forEach(remote => {
-        const idx = timers.findIndex(local => local.createdAt === remote.createdAt);
-
-        // si no existía local → agregar
-        if (idx === -1) {
-          timers.push({ ...remote });
-          return;
-        }
-
-        const local = timers[idx];
-        const localUpdated = Number(local.updatedAt || 0);
-        const remoteUpdated = Number(remote.updatedAt || 0);
-
-        // 1) Si el local está corriendo → NO pisamos, salvo que remoto sea más nuevo
-        if (local.running && !remote.running) {
-          if (remoteUpdated > localUpdated) {
-            // remoto más reciente → aplicar remoto pero conservar sesión local
-            const keep = { sessionStartPerf: local.sessionStartPerf };
-            timers[idx] = { ...remote, ...keep };
-          }
-          // si remoto es más viejo → ignorar
-          return;
-        }
-
-        // 2) Si remoto está corriendo y local no → aplicar remoto
-        if (!local.running && remote.running) {
-          timers[idx] = { ...remote };
-          timers[idx].sessionStartPerf = performance.now();
-          return;
-        }
-
-        // 3) Si ambos están pausados o ambos corriendo → gana el más reciente
-        if (remoteUpdated >= localUpdated) {
-          timers[idx] = { ...remote };
-
-          if (remote.running && remote.startedAt) {
-            timers[idx].sessionStartPerf = performance.now();
-          } else {
-            delete timers[idx].sessionStartPerf;
-          }
-        }
-        // si local es más nuevo → no hacer nada
-      });
-    }
-
-    // Reconstrucción adicional (normalización)
-    timers.forEach(t => {
-      if (t.running && t.startedAt && !t.sessionStartPerf) {
-        t.sessionStartPerf = performance.now();
-      }
-      if (!t.running) {
-        delete t.sessionStartPerf;
-      }
-    });
-
+    timers = data.timers || [];
     dayStarted = data.dayStarted || null;
     dayEnded = data.dayEnded || null;
-
+    // Resetear loggedCompletions si cambiaste de día (evita duplicados en sesión nueva)
     loggedCompletions.clear();
     renderTimers();
   });
 }
 
-
-
 async function save() {
-  if (!dbRef) return;
-
-  // crear copia limpia con updatedAt por timer
-  const cleanTimers = timers.map(t => ({
-    name: t.name,
-    elapsed: Number(t.elapsed) || 0,
-    target: t.target,
-    running: !!t.running,
-    // startedAt debe ser timestamp absoluto en ms si está corriendo
-    startedAt: t.running ? (Number(t.startedAt) || null) : null,
-    completed: !!t.completed,
-    createdAt: t.createdAt,
-    note: t.note || "",
-    // marcaremos cuándo fue la última modificación de este timer (ms)
-    updatedAt: Date.now()
-  }));
-
+  if(!dbRef) return;
   try {
-    await set(dbRef, {
-      timers: cleanTimers,
+    await set(dbRef,{
+      timers,
       dayStarted,
-      dayEnded
+      dayEnded,
+      updatedAt:new Date().toISOString()
     });
-  } catch (err) {
+  } catch(err) {
     console.error("Error guardando diaActual:", err);
   }
 }
-
-
-
 
 
 /* -------- FUNCIÓN DE LOG DE EVENTOS (historial) -------- */
@@ -548,8 +454,7 @@ document.getElementById("createTimerBtn").onclick = async () => {
     elapsed: 0,
     running: false,
     completed: false,
-    createdAt,
-    updatedAt: Date.now()
+    createdAt
   };
 
   timers.push(newTimer);
@@ -578,39 +483,19 @@ function renderTimers() {
   const container = document.getElementById("timers-container");
   container.innerHTML = "";
 
-    const totalTargetSeconds = timers.reduce((sum, t) => {
-    const targetMin = Number(t.target);
-    return sum + (isFinite(targetMin) && targetMin > 0 ? targetMin * 60 : 0);
-  }, 0);
-
+  const totalTargetSeconds = timers.reduce((sum, t) => sum + t.target * 60, 0);
   const totalElapsedSeconds = timers.reduce((sum, t) => {
-    let display = Number(t.elapsed) || 0;
-
-    if (t.running) {
-      // si tenemos referencia de sesión de alta precisión la usamos para la UI,
-      // pero para sumar al total también es correcto usar Date.now() (ambos son ms).
-      if (t.sessionStartPerf !== undefined && t.startedAt !== undefined) {
-        // perf: tiempo desde inicio de sesión actual
-        const perfDeltaSec = Math.floor((performance.now() - t.sessionStartPerf) / 1000);
-        display += perfDeltaSec;
-      } else if (t.startedAt !== undefined) {
-        // fallback absoluto (por ejemplo ventana nueva)
-        display += Math.floor((Date.now() - t.startedAt) / 1000);
-      }
-    }
+    let display = t.elapsed;
+    if (t.running && t.startedAt) display += Math.floor((new Date() - new Date(t.startedAt)) / 1000);
     return sum + display;
   }, 0);
-
-  const progress = totalTargetSeconds > 0 ? (totalElapsedSeconds / totalTargetSeconds) * 100 : 0;
-
 
   const dayInfoDiv = document.getElementById("dayInfo");
 
   if (dayStarted) {
     const start = new Date(dayStarted);
     const estimatedEnd = new Date(start.getTime() + totalTargetSeconds * 1000);
-    const progress = totalTargetSeconds > 0 ? (totalElapsedSeconds / totalTargetSeconds) * 100: 0;
-
+    const progress = totalElapsedSeconds / totalTargetSeconds * 100 || 0;
 
     dayInfoDiv.innerHTML = `
       <p>Día iniciado: ${start.toLocaleString()}</p>
@@ -628,16 +513,10 @@ function renderTimers() {
     div.draggable = true;
 
     // elapsed temporal
-        let displayElapsed = Number(t.elapsed) || 0;
-    if (t.running) {
-      if (t.sessionStartPerf !== undefined && t.startedAt !== undefined) {
-        displayElapsed += Math.floor((performance.now() - t.sessionStartPerf) / 1000);
-      } else if (t.startedAt !== undefined) {
-        displayElapsed += Math.floor((Date.now() - t.startedAt) / 1000);
-      }
+    let displayElapsed = t.elapsed;
+    if (t.running && t.startedAt) {
+      displayElapsed += Math.floor((new Date() - new Date(t.startedAt)) / 1000);
     }
-
-
 
     const pctObj = ((displayElapsed / (t.target * 60)) * 100).toFixed(1);
     const pctTotal = ((displayElapsed / totalTargetSeconds) * 100).toFixed(1);
@@ -666,12 +545,13 @@ function renderTimers() {
 
 setInterval(async () => {
   if (!timers || timers.length === 0) return;
+  const now = new Date();
   let needsSave = false;
 
   timers.forEach(t => {
     if (t.running && t.startedAt) {
-      // elapsed real absoluto (Date.now)
-      const elapsedReal = (Number(t.elapsed) || 0) + Math.floor((Date.now() - t.startedAt) / 1000);
+      // elapsed real hasta ahora
+      const elapsedReal = t.elapsed + Math.floor((now - new Date(t.startedAt)) / 1000);
 
       // marcar completado si superó objetivo
       if (!t.completed && elapsedReal >= t.target * 60) {
@@ -691,7 +571,6 @@ setInterval(async () => {
 
   renderTimers(); // refresca UI cada segundo
 }, 1000);
-
 
 
 /* ---------- EDITAR ----------- */
@@ -719,52 +598,39 @@ window.editTimer = async i => {
 
 /* -------- TIMERS acciones -------- */
 
-window.toggleTimer = async (i) => {
+window.toggleTimer = async i => {
+  if (!dayStarted) return alert("Primero inicia el día.");
+  
   const t = timers[i];
-  if (!t) return;
-
-  if (!dayStarted) {
-    alert("Primero inicia el día.");
-    return;
-  }
-
-  // marcaremos que el timer fue modificado ahora (local)
-  const markUpdated = () => {
-    t.updatedAt = Date.now();
-  };
+  const timerId = t.createdAt;
 
   if (!t.running) {
-    // INICIAR
+    // === iniciar ===
     t.running = true;
-    t.startedAt = Date.now();           // absoluto, para sincronización
-    t.sessionStartPerf = performance.now(); // solo UI
-    markUpdated();
+    t.startedAt = new Date().toISOString();   // 🔥 Se registra el momento exacto del inicio
     await save();
 
-    // log evento
     logEvento(currentUid, "timer_iniciado", {
-      timerId: t.createdAt,
+      timerId,
       name: t.name,
       elapsedAntes: t.elapsed
     });
 
   } else {
-    // PAUSAR
+    // === pausar ===
+    const nowIso = new Date().toISOString();
+
     if (t.startedAt) {
-      const deltaSec = Math.floor((Date.now() - Number(t.startedAt)) / 1000);
-      t.elapsed = (Number(t.elapsed) || 0) + Math.max(deltaSec, 0);
+      const deltaSec = Math.floor((new Date(nowIso) - new Date(t.startedAt)) / 1000);
+      t.elapsed += Math.max(0, deltaSec);     // 🔥 Se calcula el tiempo REAL
+      delete t.startedAt;
     }
 
     t.running = false;
-    // conservar elapsed, quitar startedAt/sessionStartPerf
-    t.startedAt = null;
-    delete t.sessionStartPerf;
-
-    markUpdated();
     await save();
 
     logEvento(currentUid, "timer_pausado", {
-      timerId: t.createdAt,
+      timerId,
       name: t.name,
       elapsed: t.elapsed
     });
@@ -774,17 +640,12 @@ window.toggleTimer = async (i) => {
 };
 
 
-
-
-
 window.resetTimer = async i => {
   const timerId = timers[i].createdAt;
   const prevElapsed = timers[i].elapsed;
   timers[i].elapsed=0;
   timers[i].running=false;
   timers[i].completed=false;
-  timers[i].updatedAt = Date.now();
-
   await save();
 
   logEvento(currentUid, "timer_reseteado", {
@@ -1220,6 +1081,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
