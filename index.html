@@ -920,6 +920,15 @@ async function renderRegistroEventos(){
 
 /* --- SNIPPET: construir SESSIONS y exponer window.registroProcesado --- */
 /* Pegar justo después de construir `eventosArr`, `dias`, `timersMeta`, `filas` */
+// --- Construir objetivos reales según eventos ---
+const objetivosPorTimer = {};
+eventosArr.forEach(ev => {
+  if (ev.tipo === "timer_creado" || ev.tipo === "timer_editado") {
+    if (ev.timerId && ev.target !== undefined) {
+      objetivosPorTimer[ev.timerId] = Number(ev.target);
+    }
+  }
+});
 
 (function createAndExposeRegistroProcesado(){
   // Construir sesiones (pares inicio -> cierre) a partir de eventosArr
@@ -1010,7 +1019,7 @@ let durationSec = calcDuracion(startEv, endEv);
       durationSec,
       dia: diaNum,
       dateKey,
-      objetivoMin: (timersMeta && timersMeta[timerId] && timersMeta[timerId].target) ? Number(timersMeta[timerId].target) : (startEv && startEv.target ? Number(startEv.target) : null),
+      objetivoMin: (objetivosPorTimer[timerId] !== undefined) ? Number(objetivosPorTimer[timerId]) : ((timersMeta && timersMeta[timerId] && (timersMeta[timerId].target !== undefined)) ? Number(timersMeta[timerId].target) : (startEv && (startEv.target !== undefined) ? Number(startEv.target) : null)),
       closingType: closingType || (endEv && endEv.tipo) || null
     });
 
@@ -1144,6 +1153,7 @@ document.getElementById("btnEstadisticas").onclick = () => {
 
 </body>
 </html>
+
 
 
 
