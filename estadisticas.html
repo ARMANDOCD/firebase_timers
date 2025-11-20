@@ -94,9 +94,69 @@ if (!data) {
 const registro = JSON.parse(data);
 const dias = registro.dias;
 const sessions = registro.sessions;
+const timersMeta = registro.timersMeta;
 
 /* ================================
-   2. Inicializar filtros
+   2. Procesar objetivos y acumulados
+================================ */
+
+/* 2.1 Agrupar tiempo trabajado por timer */
+const tiempoPorTimer = {};
+sessions.forEach(s => {
+    if (!tiempoPorTimer[s.timerId]) tiempoPorTimer[s.timerId] = 0;
+    tiempoPorTimer[s.timerId] += s.durationSec;
+});
+
+/* 2.2 Determinar cumplimiento por actividad */
+const cumplimientoPorTimer = {};
+for (const timerId in timersMeta) {
+    const objetivoMin = timersMeta[timerId].target || 0;
+    const objetivoSec = objetivoMin * 60;
+    const trabajado = tiempoPorTimer[timerId] || 0;
+    cumplimientoPorTimer[timerId] = trabajado >= objetivoSec;
+}
+
+/* ================================
+   3. Racha basada en objetivos diarios
+================================ */
+function calcularRachaDias() {
+    const diasAgrupados = {};
+
+    sessions.forEach(s => {
+        if (!diasAgrupados[s.dia]) diasAgrupados[s.dia] = 0;
+        diasAgrupados[s.dia] += s.durationSec;
+    });
+
+    const objetivosPorDia = {};
+    dias.forEach(d => {
+        objetivosPorDia[d.dia] = 0;
+        for (const timerId in timersMeta) {
+            const objetivo = timersMeta[timerId].target || 0;
+            objetivosPorDia[d.dia] += objetivo * 60;
+        }
+    });
+
+    let racha = 0, maxRacha = 0;
+
+    const ordenados = Object.keys(diasAgrupados)
+        .map(n => Number(n))
+        .sort((a, b) => a - b);
+
+    for (let i = 0; i < ordenados.length; i++) {
+        const dia = ordenados[i];
+        const cumplido = diasAgrupados[dia] >= objetivosPorDia[dia];
+
+        if (cumplido) {
+            racha++;
+            maxRacha = Math.max(maxRacha, racha);
+        } else racha = 0;
+    }
+
+    return maxRacha;
+}
+
+/* ================================
+   4. Inicializar filtros
 ================================ */
 const filterDia = document.getElementById("filterDia");
 const filterFecha = document.getElementById("filterFecha");
@@ -105,7 +165,6 @@ filterDia.innerHTML = `<option value="">Todos los días</option>`;
 dias.forEach(d => filterDia.innerHTML += `<option value="${d.dia}">Día ${d.dia}</option>`);
 
 const fechasUnicas = [...new Set(sessions.map(s => s.dateKey))];
-
 filterFecha.innerHTML = `<option value="">Todas las fechas</option>`;
 fechasUnicas.forEach(f => filterFecha.innerHTML += `<option value="${f}">${f}</option>`);
 
@@ -113,9 +172,9 @@ filterDia.onchange = renderTodo;
 filterFecha.onchange = renderTodo;
 
 /* ================================
-   3. Funciones de filtrado
+   5. Filtrado
 ================================ */
-function filtrarSesiones(){
+function filtrarSesiones() {
     const d = filterDia.value;
     const f = filterFecha.value;
     return sessions.filter(s => {
@@ -125,45 +184,43 @@ function filtrarSesiones(){
     });
 }
 
-function formatSec(s){
-    const h = Math.floor(s/3600);
-    const m = Math.floor((s%3600)/60);
-    const ss = s%60;
+function formatSec(s) {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const ss = s % 60;
     return `${h}h ${m}m ${ss}s`;
 }
 
 /* ================================
-   4. Render RESUMEN
+   6. RESUMEN (con racha correcta)
 ================================ */
-function renderResumen(ss){
-    const total = ss.reduce((a,b)=>a+b.durationSec,0);
-    const diasSet = new Set(ss.map(s=>s.dia));
-    const fechasSet = new Set(ss.map(s=>s.dateKey));
+function renderResumen(ss) {
+    const total = ss.reduce((a, b) => a + b.durationSec, 0);
+    const diasSet = new Set(ss.map(s => s.dia));
+    const fechasSet = new Set(ss.map(s => s.dateKey));
 
-    // Racha
-    const sorted = [...diasSet].sort((a,b)=>a-b);
-    let maxRacha=1, actual=1;
-    for(let i=1;i<sorted.length;i++){
-        if(sorted[i] == sorted[i-1] + 1) actual++;
-        else { maxRacha = Math.max(maxRacha, actual); actual = 1; }
-    }
-    maxRacha = Math.max(maxRacha, actual);
+    const racha = calcularRachaDias();
 
     document.getElementById("resumen").innerHTML = `
         <p><b>Tiempo total:</b> ${formatSec(total)}</p>
         <p><b>Días trabajados:</b> ${diasSet.size}</p>
         <p><b>Fechas únicas:</b> ${fechasSet.size}</p>
-        <p><b>Racha máxima:</b> ${maxRacha} días</p>
+        <p><b>Racha de días cumplidos:</b> ${racha}</p>
     `;
 }
 
 /* ================================
-   5. Render TABLA
+   7. TABLA (incluye objetivo y cumplido)
 ================================ */
-function renderTabla(ss){
+function renderTabla(ss) {
     const tbody = document.getElementById("tablaSesiones");
     tbody.innerHTML = "";
+
     ss.forEach(s => {
+        const meta = timersMeta[s.timerId];
+        const objetivo = meta ? meta.target : 0;
+        const cumplido = cumplimientoPorTimer[s.timerId] ? "✔" : "✖";
+
         const tr = document.createElement("tr");
         tr.innerHTML = `
             <td>${s.name}</td>
@@ -172,53 +229,58 @@ function renderTabla(ss){
             <td>${new Date(s.startTs).toLocaleString()}</td>
             <td>${new Date(s.endTs).toLocaleString()}</td>
             <td>${formatSec(s.durationSec)}</td>
+            <td>${objetivo}</td>
+            <td>${cumplido}</td>
         `;
         tbody.appendChild(tr);
     });
 }
 
 /* ================================
-   6. Gráficos
+   8. GRÁFICOS
 ================================ */
+
 let chartAct = null;
 let chartDias = null;
 
-function renderChartActividades(ss){
+function renderChartActividades(ss) {
     const acc = {};
-    ss.forEach(s=>{
-        if(!acc[s.name]) acc[s.name]=0;
-        acc[s.name]+=s.durationSec;
+    ss.forEach(s => {
+        if (!acc[s.name]) acc[s.name] = 0;
+        acc[s.name] += s.durationSec;
     });
+
     const labels = Object.keys(acc);
     const values = Object.values(acc);
 
-    if(chartAct) chartAct.destroy();
-    chartAct = new Chart(document.getElementById("chartActividades"),{
-        type:"bar",
-        data:{ labels, datasets:[{ label:"Segundos", data:values }] }
+    if (chartAct) chartAct.destroy();
+    chartAct = new Chart(document.getElementById("chartActividades"), {
+        type: "bar",
+        data: { labels, datasets: [{ label: "Segundos", data: values }] }
     });
 }
 
-function renderChartDias(ss){
+function renderChartDias(ss) {
     const acc = {};
-    ss.forEach(s=>{
-        if(!acc[s.dia]) acc[s.dia]=0;
-        acc[s.dia]+=s.durationSec;
+    ss.forEach(s => {
+        if (!acc[s.dia]) acc[s.dia] = 0;
+        acc[s.dia] += s.durationSec;
     });
-    const labels = Object.keys(acc).map(d=>"Día "+d);
+
+    const labels = Object.keys(acc).map(d => "Día " + d);
     const values = Object.values(acc);
 
-    if(chartDias) chartDias.destroy();
-    chartDias = new Chart(document.getElementById("chartDias"),{
-        type:"line",
-        data:{ labels, datasets:[{ label:"Segundos", data:values, tension:0.3 }] }
+    if (chartDias) chartDias.destroy();
+    chartDias = new Chart(document.getElementById("chartDias"), {
+        type: "line",
+        data: { labels, datasets: [{ label: "Segundos", data: values, tension: 0.3 }] }
     });
 }
 
 /* ================================
-   7. Render TOTAL
+   9. Render completo
 ================================ */
-function renderTodo(){
+function renderTodo() {
     const ss = filtrarSesiones();
     renderResumen(ss);
     renderTabla(ss);
@@ -229,8 +291,10 @@ function renderTodo(){
 renderTodo();
 </script>
 
+
 </body>
 </html>
+
 
 
 
