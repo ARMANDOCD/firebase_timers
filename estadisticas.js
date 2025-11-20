@@ -234,23 +234,34 @@ function computeMetrics(reg) {
 
     // objetivos: sumar objetivos de TODOS los cronómetros que existen en el día
     // definimos "existen en el día" como aquellos con evento timer_creado dentro del día (si no hay creados, intentar buscar createdAt global en timersMeta)
-    let objetivoMinSum = 0;
-    // tomar createdInDay target
-    createdInDay.forEach(c => { if (c.objetivoMin) objetivoMinSum += Number(c.objetivoMin); });
-    // si createdInDay vacío, intentar sumar objetivos de timersMeta que tengan createdAt dentro del día
-    if (createdInDay.length === 0) {
-      Object.entries(timersMeta || {}).forEach(([k,meta]) => {
-        if (!meta.createdAt) return;
-        const ca = new Date(meta.createdAt).getTime();
-        const sTs = d.inicio ? new Date(d.inicio).getTime() : null;
-        const eTs = d.fin ? new Date(d.fin).getTime() : null;
-        if (sTs && eTs) {
-          if (ca >= sTs && ca <= eTs) { if (meta.target) objetivoMinSum += Number(meta.target); }
-        } else if (sTs && !eTs) {
-          if (ca >= sTs) { if (meta.target) objetivoMinSum += Number(meta.target); }
-        }
-      });
+    // OBJETIVOS POR DÍA — NUEVA LÓGICA CORRECTA
+// Para cada cronómetro del día, buscar el último objetivo visible en el propio día.
+let objetivoMinSum = 0;
+
+timersInDay.forEach(timerName => {
+  // filtrar eventos del día pertenecientes a este cronómetro
+  const evTimer = evs.filter(x => x.nombre === timerName);
+
+  // buscar la última fila del día con objetivoMin no nulo
+  let lastObj = null;
+  for (let i = evTimer.length - 1; i >= 0; i--) {
+    if (evTimer[i].objetivoMin !== null && !isNaN(evTimer[i].objetivoMin)) {
+      lastObj = evTimer[i].objetivoMin;
+      break;
     }
+  }
+
+  // si no se encontró objetivo en el día, objetivo = 0
+  if (lastObj === null) lastObj = 0;
+
+  objetivoMinSum += Number(lastObj);
+});
+
+perDia[d.dia].objetivosMinTotal = objetivoMinSum;
+perDia[d.dia].objetivoSecTotal = objetivoMinSum * 60;
+perDia[d.dia].tiempoRestanteSec = Math.max(0, perDia[d.dia].objetivoSecTotal - perDia[d.dia].totalSec);
+perDia[d.dia].exitoso = perDia[d.dia].totalSec >= perDia[d.dia].objetivoSecTotal;
+
 
     perDia[d.dia].objetivosMinTotal = objetivoMinSum;
     perDia[d.dia].objetivoSecTotal = Math.round(objetivoMinSum * 60);
@@ -694,6 +705,7 @@ export async function renderStatsGeneral() {
     renderCharts(metrics, registro, sessionsFiltered);
   }
 }
+
 
 
 
