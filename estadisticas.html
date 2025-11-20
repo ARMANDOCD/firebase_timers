@@ -81,291 +81,252 @@ th, td {
 </div>
 
 <script>
-/* ================================
-   SCRIPT MEJORADO PARA DURACIONES, OBJETIVOS, CUMPLIMIENTO Y RACHAS
-   Reemplaza el script anterior por este.
-================================ */
-
-/* 1) cargar registro desde localStorage */
+// ============================
+//  1. Cargar datos
+// ============================
 const data = localStorage.getItem("registroProcesado");
 if (!data) {
-  document.body.innerHTML = "<h2>No se encontraron datos (registroProcesado). Abra desde index.html</h2>";
-  throw new Error("Sin datos");
+    document.body.innerHTML = "<h2>No se encontraron datos (registroProcesado). Abra desde index.html</h2>";
+    throw new Error("No hay datos");
 }
+
 const registro = JSON.parse(data);
-/* Estructura esperada: { dias: [...], sessions: [...], timersMeta: {...} } */
-const dias = registro.dias || [];
-let sessions = registro.sessions || [];
-const timersMetaRaw = registro.timersMeta || {};
+const sessionsRaw = registro.sessions || [];
+const timersMeta = registro.timersMeta || {};
+const diasRegistro = registro.dias || [];
 
-/* Console debug inicial */
-console.log("registro.dias:", dias);
-console.log("registro.sessions (count):", sessions.length);
-console.log("timersMetaRaw:", timersMetaRaw);
+// ============================
+//  2. Normalizar sesiones
+// ============================
+const sessions = sessionsRaw.map(s => {
+    const duration = Math.max(0, (Number(s.endElapsed) || 0) - (Number(s.startElapsed) || 0));
 
-/* 2) Normalizar timersMeta: asegurar target numérico y nombre */
-const timersMeta = {};
-Object.keys(timersMetaRaw).forEach(tid => {
-  const m = timersMetaRaw[tid] || {};
-  timersMeta[tid] = {
-    name: m.name || tid,
-    targetMin: (m.target !== undefined && m.target !== null) ? Number(m.target) : 0
-  };
+    return {
+        ...s,
+        durationSec: duration,
+        timerId: s.timerId,
+        name: s.name,
+        dia: s.dia,
+        dateKey: s.dateKey,
+        startTs: s.startTs,
+        endTs: s.endTs
+    };
 });
 
-/* 3) Normalizar sesiones y calcular DURACIÓN preferente por marcas elapsed */
-sessions = sessions.map(s => {
-  // copia defensiva
-  const ss = Object.assign({}, s);
+// ============================
+//  3. Construir metaPorTimerId
+// ============================
+const metaPorTimerId = {};
+for (const tid in timersMeta) {
+    const m = timersMeta[tid];
+    metaPorTimerId[tid] = {
+        name: m.name || "(sin nombre)",
+        targetMin: Number(m.target || 0),
+        createdAt: m.createdAt
+    };
+}
 
-  // normalize timerId presence
-  const tid = ss.timerId || null;
-  ss.timerId = tid;
-
-  // start/end events may have startElapsed / endElapsed in the original raw objects.
-  // We expect sessions were created with startTs and endTs, plus possible startElapsed/endElapsed.
-  // If startElapsed & endElapsed disponibles, usar diferencia; sino fallback a timestamp diff.
-  let duration = null;
-  if (ss.startElapsed !== undefined && ss.startElapsed !== null && ss.endElapsed !== undefined && ss.endElapsed !== null) {
-    // Ambos provienen de campos "elapsed" o "elapsedAntes"
-    const se = Number(ss.startElapsed);
-    const ee = Number(ss.endElapsed);
-    if (!isNaN(se) && !isNaN(ee) && ee >= se) {
-      duration = Math.max(0, Math.floor(ee - se));
-    }
-  }
-
-  // Si no calculamos por elapsed, intentar usar campos raw en caso de que session tenga rawStart/rawEnd
-  if (duration === null) {
-    // si existen campos rawStartElapsed / rawEndElapsed (metadatos) intentamos usarlos
-    if (ss.rawStartElapsed !== undefined && ss.rawEndElapsed !== undefined) {
-      const se = Number(ss.rawStartElapsed);
-      const ee = Number(ss.rawEndElapsed);
-      if (!isNaN(se) && !isNaN(ee) && ee >= se) duration = Math.max(0, Math.floor(ee - se));
-    }
-  }
-
-  // Ultimate fallback: diferencia de timestamps (segundos)
-  if (duration === null) {
-    try {
-      const st = new Date(ss.startTs).getTime();
-      const en = new Date(ss.endTs).getTime();
-      if (!isNaN(st) && !isNaN(en) && en >= st) {
-        duration = Math.max(0, Math.floor((en - st) / 1000));
-      } else {
-        duration = 0;
-      }
-    } catch (e) {
-      duration = 0;
-    }
-  }
-
-  ss.durationSec = duration;
-
-  return ss;
-});
-
-/* DEBUG: ver primeras sesiones y duraciones */
-console.log("Sessions after normalization (first 10):", sessions.slice(0,10));
-
-/* 4) Acumulados por timer (global) - útil para cumplimiento total */
-const acumuladoPorTimer = {};
-sessions.forEach(s => {
-  if (!s.timerId) return;
-  acumuladoPorTimer[s.timerId] = (acumuladoPorTimer[s.timerId] || 0) + (Number(s.durationSec) || 0);
-});
-console.log("Acumulado por timer (segundos):", acumuladoPorTimer);
-
-/* 5) Helpers UI y filtrado */
+// ============================
+//  4. Filtros
+// ============================
 const filterDia = document.getElementById("filterDia");
 const filterFecha = document.getElementById("filterFecha");
 
 filterDia.innerHTML = `<option value="">Todos los días</option>`;
-dias.forEach(d => filterDia.innerHTML += `<option value="${d.dia}">Día ${d.dia}</option>`);
+diasRegistro.forEach(d => {
+    filterDia.innerHTML += `<option value="${d.dia}">Día ${d.dia}</option>`;
+});
 
-const fechasUnicas = [...new Set(sessions.map(s => s.dateKey))].sort();
+const fechasUnicas = [...new Set(sessions.map(s => s.dateKey))];
 filterFecha.innerHTML = `<option value="">Todas las fechas</option>`;
-fechasUnicas.forEach(f => filterFecha.innerHTML += `<option value="${f}">${f}</option>`);
+fechasUnicas.forEach(f => {
+    filterFecha.innerHTML += `<option value="${f}">${f}</option>`;
+});
 
 filterDia.onchange = renderTodo;
 filterFecha.onchange = renderTodo;
 
-function filtrarSesiones() {
-  const d = filterDia.value;
-  const f = filterFecha.value;
-  return sessions.filter(s => {
-    if (d && (s.dia == null || String(s.dia) !== String(d))) return false;
-    if (f && s.dateKey !== f) return false;
-    return true;
-  }).sort((a,b) => new Date(a.startTs) - new Date(b.startTs));
-}
-
+// ============================
+//  5. Helper: formateo
+// ============================
 function formatSec(s) {
-  const h = Math.floor(s/3600);
-  const m = Math.floor((s%3600)/60);
-  const ss = s%60;
-  return `${h}h ${m}m ${ss}s`;
+    const h = Math.floor(s/3600);
+    const m = Math.floor((s%3600)/60);
+    const ss = s%60;
+    return `${h}h ${m}m ${ss}s`;
 }
 
-/* 6) Tabla: ahora incluye Objetivo (min) y Cumplido según acumulado hasta ese instante */
-function renderTabla(ss) {
-  const tbody = document.getElementById("tablaSesiones");
-  tbody.innerHTML = "";
-
-  // necesitamos acumulado por timer **hasta** cada sesión
-  const acumuladoPorTimerLocal = {}; // reset
-  ss.forEach(s => {
-    const tid = s.timerId || "__noid__";
-    const dur = Number(s.durationSec) || 0;
-    acumuladoPorTimerLocal[tid] = acumuladoPorTimerLocal[tid] || 0;
-    acumuladoPorTimerLocal[tid] += dur;
-
-    // obtener objetivo (minutos) desde timersMeta; si no está, 0
-    const meta = (s.timerId && timersMeta[s.timerId]) ? timersMeta[s.timerId] : { name: s.name || "Sin nombre", targetMin: 0 };
-    const objetivoMin = Number(meta.targetMin || 0);
-    const objetivoSec = objetivoMin * 60;
-    const cumplido = acumuladoPorTimerLocal[tid] >= objetivoSec ? "✔" : "✖";
-
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${s.name || (timersMeta[s.timerId] && timersMeta[s.timerId].name) || ""}</td>
-      <td>${s.dia == null ? "<i>sin día</i>" : s.dia}</td>
-      <td>${s.dateKey || ""}</td>
-      <td>${new Date(s.startTs).toLocaleString()}</td>
-      <td>${new Date(s.endTs).toLocaleString()}</td>
-      <td>${formatSec(dur)}</td>
-      <td>${objetivoMin}</td>
-      <td>${cumplido}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-/* 7) Racha: ahora calculada con sumas por día vs suma de objetivos de timers que participaron ese día */
-function calcularRachaDias() {
-  // agrupar tiempo trabajado por dia
-  const trabajadoPorDia = {}; // diaNum -> segundos
-  const timersPorDia = {}; // diaNum -> Set(timerId)
-  sessions.forEach(s => {
-    const dia = s.dia;
-    if (dia == null) return;
-    trabajadoPorDia[dia] = (trabajadoPorDia[dia] || 0) + Number(s.durationSec || 0);
-    timersPorDia[dia] = timersPorDia[dia] || new Set();
-    if (s.timerId) timersPorDia[dia].add(s.timerId);
-  });
-
-  // sumar objetivos por dia (solo timers que tuvieron sesiones ese dia)
-  const objetivosPorDia = {};
-  Object.keys(timersPorDia).forEach(d => {
-    let sum = 0;
-    timersPorDia[d].forEach(tid => {
-      const meta = timersMeta[tid];
-      const tmin = meta ? Number(meta.targetMin || 0) : 0;
-      sum += (tmin * 60);
+function filtrarSesiones() {
+    const d = filterDia.value;
+    const f = filterFecha.value;
+    return sessions.filter(s => {
+        if (d && String(s.dia) !== d) return false;
+        if (f && s.dateKey !== f) return false;
+        return true;
     });
-    objetivosPorDia[d] = sum;
-  });
+}
 
-  // ordenar dias numéricamente y calcular rachas consecutivas
-  const diasOrdenados = Object.keys(trabajadoPorDia).map(n => Number(n)).sort((a,b) => a-b);
-  let maxRacha = 0, rachaActual = 0, prev = null;
-  for (let i = 0; i < diasOrdenados.length; i++) {
-    const d = diasOrdenados[i];
-    const trabaj = trabajadoPorDia[d] || 0;
-    const obj = objetivosPorDia[d] || 0;
-    const cumplido = (obj === 0) ? false : (trabaj >= obj); // si no hay objetivo -> no contar como cumplido
-    // comprobar consecutividad
-    if (prev === null || d === prev + 1) {
-      // continuidad
-      if (cumplido) {
-        rachaActual++;
-      } else rachaActual = 0;
-    } else {
-      // hueco en numeración => romper racha
-      rachaActual = cumplido ? 1 : 0;
+// ============================
+//  6. Tabla con objetivo y cumplimiento
+// ============================
+function renderTabla(ss) {
+    const tbody = document.getElementById("tablaSesiones");
+    tbody.innerHTML = "";
+
+    const acumulado = {};  // por timerId
+
+    ss.forEach(s => {
+        const tid = s.timerId;
+        const meta = metaPorTimerId[tid] || { targetMin: 0, name: s.name };
+
+        acumulado[tid] = (acumulado[tid] || 0) + s.durationSec;
+
+        const objetivoSec = meta.targetMin * 60;
+        const cumplido = acumulado[tid] >= objetivoSec ? "✔" : "✖";
+
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td>${s.name}</td>
+            <td>${s.dia}</td>
+            <td>${s.dateKey}</td>
+            <td>${new Date(s.startTs).toLocaleString()}</td>
+            <td>${new Date(s.endTs).toLocaleString()}</td>
+            <td>${formatSec(s.durationSec)}</td>
+            <td>${meta.targetMin}</td>
+            <td>${cumplido}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+// ============================
+//  7. Racha correcta
+// ============================
+function calcularRacha() {
+    const trabajPorDia = {};  
+    const timersPorDia = {};  
+
+    sessions.forEach(s => {
+        if (s.dia == null) return;
+
+        trabajPorDia[s.dia] = (trabajPorDia[s.dia] || 0) + s.durationSec;
+
+        timersPorDia[s.dia] = timersPorDia[s.dia] || new Set();
+        timersPorDia[s.dia].add(s.timerId);
+    });
+
+    const objetivosPorDia = {};
+    for (const dia in timersPorDia) {
+        let total = 0;
+        for (const tid of timersPorDia[dia]) {
+            const meta = metaPorTimerId[tid];
+            if (!meta) continue;
+            total += meta.targetMin * 60;
+        }
+        objetivosPorDia[dia] = total;
     }
-    maxRacha = Math.max(maxRacha, rachaActual);
-    prev = d;
-  }
 
-  // DEBUG
-  console.log("trabajadoPorDia:", trabajadoPorDia);
-  console.log("objetivosPorDia:", objetivosPorDia);
-  return maxRacha;
+    const diasOrd = Object.keys(trabajPorDia).map(Number).sort((a,b)=>a-b);
+
+    let max = 0, streak = 0, last = null;
+
+    diasOrd.forEach(d => {
+        const t = trabajPorDia[d];
+        const o = objetivosPorDia[d] || 0;
+
+        const cumplido = (o > 0 && t >= o);
+
+        if (last === null || d === last + 1) {
+            streak = cumplido ? streak + 1 : 0;
+        } else {
+            streak = cumplido ? 1 : 0;
+        }
+
+        max = Math.max(max, streak);
+        last = d;
+    });
+
+    return max;
 }
 
-/* 8) Resumen */
+// ============================
+//  8. Resumen
+// ============================
 function renderResumen(ss) {
-  const total = ss.reduce((a,b) => a + Number(b.durationSec || 0), 0);
-  const diasSet = new Set(ss.map(s => s.dia).filter(x => x != null));
-  const fechasSet = new Set(ss.map(s => s.dateKey).filter(x => x != null));
-  const racha = calcularRachaDias();
+    const total = ss.reduce((a,b)=>a+b.durationSec, 0);
+    const diasSet = new Set(ss.map(s => s.dia));
+    const fechasSet = new Set(ss.map(s => s.dateKey));
 
-  document.getElementById("resumen").innerHTML = `
-    <p><b>Tiempo total:</b> ${formatSec(total)}</p>
-    <p><b>Días trabajados:</b> ${diasSet.size}</p>
-    <p><b>Fechas únicas:</b> ${fechasSet.size}</p>
-    <p><b>Racha de días cumplidos:</b> ${racha}</p>
-  `;
+    const racha = calcularRacha();
+
+    document.getElementById("resumen").innerHTML = `
+        <p><b>Tiempo total:</b> ${formatSec(total)}</p>
+        <p><b>Días trabajados:</b> ${diasSet.size}</p>
+        <p><b>Fechas únicas:</b> ${fechasSet.size}</p>
+        <p><b>Racha de días cumplidos:</b> ${racha}</p>
+    `;
 }
 
-/* 9) Graficas (igual que antes, pero con los durations ya normalizados) */
+// ============================
+//  9. Gráficos
+// ============================
 let chartAct = null, chartDias = null;
+
 function renderChartActividades(ss) {
-  const acc = {};
-  ss.forEach(s => {
-    const name = s.name || (timersMeta[s.timerId] && timersMeta[s.timerId].name) || s.timerId || "sin nombre";
-    acc[name] = (acc[name] || 0) + Number(s.durationSec || 0);
-  });
-  const labels = Object.keys(acc);
-  const values = Object.values(acc);
-  if (chartAct) chartAct.destroy();
-  chartAct = new Chart(document.getElementById("chartActividades"), {
-    type: "bar",
-    data: { labels, datasets: [{ label: "Segundos", data: values }] }
-  });
+    const acc = {};
+    ss.forEach(s => {
+        acc[s.name] = (acc[s.name] || 0) + s.durationSec;
+    });
+
+    const labels = Object.keys(acc);
+    const values = Object.values(acc);
+
+    if (chartAct) chartAct.destroy();
+
+    chartAct = new Chart(document.getElementById("chartActividades"),{
+        type:"bar",
+        data:{ labels, datasets:[{ label:"Segundos", data:values }] }
+    });
 }
 
 function renderChartDias(ss) {
-  const acc = {};
-  ss.forEach(s => {
-    const d = s.dia || "sin dia";
-    acc[d] = (acc[d] || 0) + Number(s.durationSec || 0);
-  });
-  const labels = Object.keys(acc).map(k => k === "sin dia" ? "sin día" : "Día " + k);
-  const values = Object.values(acc);
-  if (chartDias) chartDias.destroy();
-  chartDias = new Chart(document.getElementById("chartDias"), {
-    type: "line",
-    data: { labels, datasets: [{ label: "Segundos", data: values, tension: 0.3 }] }
-  });
+    const acc = {};
+    ss.forEach(s => {
+        acc[s.dia] = (acc[s.dia] || 0) + s.durationSec;
+    });
+
+    const labels = Object.keys(acc).map(d => "Día " + d);
+    const values = Object.values(acc);
+
+    if (chartDias) chartDias.destroy();
+
+    chartDias = new Chart(document.getElementById("chartDias"),{
+        type:"line",
+        data:{ labels, datasets:[{ label:"Segundos", data:values, tension:0.25 }] }
+    });
 }
 
-/* 10) render completo */
+// ============================
+//  10. Render final
+// ============================
 function renderTodo() {
-  const ss = filtrarSesiones();
-  renderResumen(ss);
-  renderTabla(ss);
-  renderChartActividades(ss);
-  renderChartDias(ss);
+    const ss = filtrarSesiones();
+    renderResumen(ss);
+    renderTabla(ss);
+    renderChartActividades(ss);
+    renderChartDias(ss);
 }
 
-/* Inicial */
 renderTodo();
 
-/* Exportar helpers de debug */
-window._estad_debug = {
-  sessions,
-  timersMeta,
-  acumuladoPorTimer
-};
-console.log("DEBUG helper accessible as window._estad_debug");
 </script>
+
 
 
 
 </body>
 </html>
+
 
 
 
