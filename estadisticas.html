@@ -12,7 +12,6 @@ body {
   background: #ececec;
   padding: 20px;
 }
-
 h1, h2 { color:#222; }
 .card {
   background: white;
@@ -21,14 +20,12 @@ h1, h2 { color:#222; }
   box-shadow:0 2px 6px rgba(0,0,0,0.2);
   margin-bottom:20px;
 }
-
 #filters {
   display:flex;
   gap:10px;
   margin-bottom:20px;
 }
 select { padding:6px; }
-
 table {
   border-collapse: collapse;
   width: 100%;
@@ -83,299 +80,158 @@ th, td {
   </table>
 </div>
 
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+<script>
+/* ================================
+   1. Cargar registro desde localStorage
+================================ */
+const data = localStorage.getItem("registroProcesado");
 
-/* ------------------------------
-   1. LEER UID DESDE LA URL
------------------------------- */
-const params = new URLSearchParams(window.location.search);
-const uid = params.get("uid");
-
-if (!uid) {
-    document.body.innerHTML = "<h2>No se recibió UID en la URL (estadisticas.html?uid=XXXXX)</h2>";
-    throw new Error("UID faltante");
+if (!data) {
+    document.body.innerHTML = "<h2>No se encontraron datos (registroProcesado). Abra desde index.html</h2>";
+    throw new Error("Sin datos");
 }
 
-/* ------------------------------
-   2. INICIALIZAR FIREBASE
------------------------------- */
-const firebaseConfig = {
-  apiKey: "AIzaSyCby9oxzPzBDllkzuW21ZoGNJh67UgYZ8E",
-  authDomain: "notion-timers-2a3bb.firebaseapp.com",
-  databaseURL: "https://notion-timers-2a3bb-default-rtdb.firebaseio.com",
-  projectId: "notion-timers-2a3bb",
-  storageBucket: "notion-timers-2a3bb.firebasestorage.app",
-  messagingSenderId: "78500747038",
-  appId: "1:78500747038:web:2b5fdec3731a203c7f1b0f"
-};
+const registro = JSON.parse(data);
+const dias = registro.dias;
+const sessions = registro.sessions;
 
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+/* ================================
+   2. Inicializar filtros
+================================ */
+const filterDia = document.getElementById("filterDia");
+const filterFecha = document.getElementById("filterFecha");
 
-const eventosRef = ref(db, `usuarios/${uid}/historialEventos`);
+filterDia.innerHTML = `<option value="">Todos los días</option>`;
+dias.forEach(d => filterDia.innerHTML += `<option value="${d.dia}">Día ${d.dia}</option>`);
 
-/* ------------------------------
-   3. ESPERAR EVENTOS EN TIEMPO REAL
------------------------------- */
-onValue(eventosRef, snap => {
-    const raw = snap.val() || {};
-    const arr = Object.entries(raw).map(([id, v]) => ({ id, ...v }))
-        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+const fechasUnicas = [...new Set(sessions.map(s => s.dateKey))];
 
-    procesarEventos(arr);
-});
+filterFecha.innerHTML = `<option value="">Todas las fechas</option>`;
+fechasUnicas.forEach(f => filterFecha.innerHTML += `<option value="${f}">${f}</option>`);
 
-/* ------------------------------
-   4. PROCESAR EVENTOS COMO EL INDEX
------------------------------- */
-function procesarEventos(eventosArr){
+filterDia.onchange = renderTodo;
+filterFecha.onchange = renderTodo;
 
-    /* 4.1 Detectar días */
-    const inicios = eventosArr.filter(e => e.tipo === "dia_iniciado");
-    const finales = eventosArr.filter(e => e.tipo === "dia_finalizado");
-
-    const dias = [];
-    const used = new Set();
-
-    inicios.forEach((ini)=>{
-        const iTs = new Date(ini.timestamp);
-        let fin = null;
-        for(let j=0;j<finales.length;j++){
-            if(used.has(j)) continue;
-            const fTs = new Date(finales[j].timestamp);
-            if(fTs >= iTs){
-                fin = finales[j];
-                used.add(j);
-                break;
-            }
-        }
-        dias.push({
-            dia: dias.length+1,
-            inicio: ini.timestamp,
-            fin: fin ? fin.timestamp : null,
-            rawInicio: ini,
-            rawFin: fin
-        });
+/* ================================
+   3. Funciones de filtrado
+================================ */
+function filtrarSesiones(){
+    const d = filterDia.value;
+    const f = filterFecha.value;
+    return sessions.filter(s => {
+        if (d && s.dia != d) return false;
+        if (f && s.dateKey != f) return false;
+        return true;
     });
-
-    /* Helper para día correspondiente */
-    function diaPara(ts){
-        const t = new Date(ts);
-        for(const d of dias){
-            const s = new Date(d.inicio);
-            const e = d.fin ? new Date(d.fin) : null;
-            if(e && t>=s && t<=e) return d.dia;
-            if(!e && t>=s) return d.dia; // día abierto
-        }
-        return null;
-    }
-
-    /* 4.2 Metadata de timers */
-    const timersMeta = {};
-    eventosArr.forEach(ev=>{
-        if(ev.tipo==="timer_creado"){
-            timersMeta[ev.timerId] = {
-                name: ev.name || ev.timerId,
-                target: ev.target || null
-            }
-        }
-    });
-
-    /* 4.3 Construir sesiones */
-    const open = {};
-    const sessions = [];
-
-    function cerrar(tid, endEv){
-        if(!open[tid]) return;
-        const startEv = open[tid];
-
-        const st = startEv.timestamp;
-        const en = endEv.timestamp;
-
-        const duration = Math.max(0, Math.floor((new Date(en)-new Date(st))/1000));
-
-        sessions.push({
-            timerId: tid,
-            name: startEv.name || (timersMeta[tid]?.name ?? tid),
-            startTs: st,
-            endTs: en,
-            durationSec: duration,
-            dia: diaPara(st),
-            dateKey: new Date(st).toISOString().slice(0,10)
-        });
-
-        delete open[tid];
-    }
-
-    eventosArr.forEach(ev=>{
-        const tid = ev.timerId;
-
-        if(ev.tipo==="timer_iniciado" && tid){
-            open[tid] = ev;
-        }
-
-        if(tid && ["timer_pausado","timer_reseteado","timer_completado","timer_borrado"].includes(ev.tipo)){
-            cerrar(tid, ev);
-        }
-    });
-
-    // Cerrar sesiones abiertas usando day_end o now
-    const nowIso = new Date().toISOString();
-    for(const tid in open){
-        const st = open[tid].timestamp;
-        let closed=false;
-        for(const d of dias){
-            const ds = new Date(d.inicio);
-            const de = d.fin ? new Date(d.fin) : null;
-            if(de && new Date(st)>=ds && new Date(st)<=de){
-                cerrar(tid,{timestamp:d.fin});
-                closed=true;
-                break;
-            }
-        }
-        if(!closed){
-            cerrar(tid,{timestamp:nowIso});
-        }
-    }
-
-    /* --------------------------
-       5. ENVIAR A RENDER
-    ---------------------------*/
-    cargarUI(dias, sessions);
 }
 
-/* ------------------------------
-    RENDER UI COMPLETA
------------------------------- */
-function cargarUI(dias, sessions){
+function formatSec(s){
+    const h = Math.floor(s/3600);
+    const m = Math.floor((s%3600)/60);
+    const ss = s%60;
+    return `${h}h ${m}m ${ss}s`;
+}
 
-    const filterDia = document.getElementById("filterDia");
-    const filterFecha = document.getElementById("filterFecha");
+/* ================================
+   4. Render RESUMEN
+================================ */
+function renderResumen(ss){
+    const total = ss.reduce((a,b)=>a+b.durationSec,0);
+    const diasSet = new Set(ss.map(s=>s.dia));
+    const fechasSet = new Set(ss.map(s=>s.dateKey));
 
-    /* Filtros */
-    filterDia.innerHTML = `<option value="">Todos los días</option>`;
-    dias.forEach(d=>{
-        filterDia.innerHTML += `<option value="${d.dia}">Día ${d.dia}</option>`;
-    });
-
-    const fechasUnicas = [...new Set(sessions.map(s=>s.dateKey))];
-    filterFecha.innerHTML = `<option value="">Todas las fechas</option>`;
-    fechasUnicas.forEach(f=>{
-        filterFecha.innerHTML += `<option value="${f}">${f}</option>`;
-    });
-
-    filterDia.onchange = ()=> renderTodo();
-    filterFecha.onchange = ()=> renderTodo();
-
-    function filtrar(){
-        const d = filterDia.value;
-        const f = filterFecha.value;
-
-        return sessions.filter(s=>{
-            if(d && s.dia != d) return false;
-            if(f && s.dateKey != f) return false;
-            return true;
-        });
+    // Racha
+    const sorted = [...diasSet].sort((a,b)=>a-b);
+    let maxRacha=1, actual=1;
+    for(let i=1;i<sorted.length;i++){
+        if(sorted[i] == sorted[i-1] + 1) actual++;
+        else { maxRacha = Math.max(maxRacha, actual); actual = 1; }
     }
+    maxRacha = Math.max(maxRacha, actual);
 
-    /* Helpers */
-    function formatSec(s){
-        const h = Math.floor(s/3600);
-        const m = Math.floor((s%3600)/60);
-        const ss = s%60;
-        return `${h}h ${m}m ${ss}s`;
-    }
+    document.getElementById("resumen").innerHTML = `
+        <p><b>Tiempo total:</b> ${formatSec(total)}</p>
+        <p><b>Días trabajados:</b> ${diasSet.size}</p>
+        <p><b>Fechas únicas:</b> ${fechasSet.size}</p>
+        <p><b>Racha máxima:</b> ${maxRacha} días</p>
+    `;
+}
 
-    function renderResumen(ss){
-        const total = ss.reduce((a,b)=>a+b.durationSec,0);
-        const diasSet = new Set(ss.map(s=>s.dia));
-        const fechasSet = new Set(ss.map(s=>s.dateKey));
-
-        let sorted = [...diasSet].sort((a,b)=>a-b);
-        let maxRacha=1, actual=1;
-        for(let i=1;i<sorted.length;i++){
-            if(sorted[i] == sorted[i-1]+1) actual++;
-            else { maxRacha=Math.max(maxRacha,actual); actual=1; }
-        }
-        maxRacha = Math.max(maxRacha, actual);
-
-        document.getElementById("resumen").innerHTML = `
-            <p><b>Tiempo total:</b> ${formatSec(total)}</p>
-            <p><b>Días trabajados:</b> ${diasSet.size}</p>
-            <p><b>Fechas únicas:</b> ${fechasSet.size}</p>
-            <p><b>Racha máxima:</b> ${maxRacha} días</p>
+/* ================================
+   5. Render TABLA
+================================ */
+function renderTabla(ss){
+    const tbody = document.getElementById("tablaSesiones");
+    tbody.innerHTML = "";
+    ss.forEach(s => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td>${s.name}</td>
+            <td>${s.dia}</td>
+            <td>${s.dateKey}</td>
+            <td>${new Date(s.startTs).toLocaleString()}</td>
+            <td>${new Date(s.endTs).toLocaleString()}</td>
+            <td>${formatSec(s.durationSec)}</td>
         `;
-    }
-
-    function renderTabla(ss){
-        const tbody = document.getElementById("tablaSesiones");
-        tbody.innerHTML = "";
-        ss.forEach(s=>{
-            const tr = document.createElement("tr");
-            tr.innerHTML = `
-                <td>${s.name}</td>
-                <td>${s.dia}</td>
-                <td>${s.dateKey}</td>
-                <td>${new Date(s.startTs).toLocaleString()}</td>
-                <td>${new Date(s.endTs).toLocaleString()}</td>
-                <td>${formatSec(s.durationSec)}</td>
-            `;
-            tbody.appendChild(tr);
-        });
-    }
-
-    /* CHARTS */
-    let chartAct=null, chartDias=null;
-
-    function renderChartActividades(ss){
-        const acc = {};
-        ss.forEach(s=>{
-            if(!acc[s.name]) acc[s.name]=0;
-            acc[s.name]+=s.durationSec;
-        });
-
-        const labels = Object.keys(acc);
-        const values = Object.values(acc);
-
-        if(chartAct) chartAct.destroy();
-        chartAct = new Chart(document.getElementById("chartActividades"),{
-            type:"bar",
-            data:{labels, datasets:[{label:"Segundos", data:values}]}
-        });
-    }
-
-    function renderChartDias(ss){
-        const acc = {};
-        ss.forEach(s=>{
-            if(!acc[s.dia]) acc[s.dia]=0;
-            acc[s.dia]+=s.durationSec;
-        });
-
-        const labels = Object.keys(acc).map(d=>"Día "+d);
-        const values = Object.values(acc);
-
-        if(chartDias) chartDias.destroy();
-        chartDias = new Chart(document.getElementById("chartDias"),{
-            type:"line",
-            data:{labels, datasets:[{label:"Segundos", data:values, tension:0.3}]}
-        });
-    }
-
-    function renderTodo(){
-        const ss = filtrar();
-        renderResumen(ss);
-        renderTabla(ss);
-        renderChartActividades(ss);
-        renderChartDias(ss);
-    }
-
-    renderTodo();
+        tbody.appendChild(tr);
+    });
 }
+
+/* ================================
+   6. Gráficos
+================================ */
+let chartAct = null;
+let chartDias = null;
+
+function renderChartActividades(ss){
+    const acc = {};
+    ss.forEach(s=>{
+        if(!acc[s.name]) acc[s.name]=0;
+        acc[s.name]+=s.durationSec;
+    });
+    const labels = Object.keys(acc);
+    const values = Object.values(acc);
+
+    if(chartAct) chartAct.destroy();
+    chartAct = new Chart(document.getElementById("chartActividades"),{
+        type:"bar",
+        data:{ labels, datasets:[{ label:"Segundos", data:values }] }
+    });
+}
+
+function renderChartDias(ss){
+    const acc = {};
+    ss.forEach(s=>{
+        if(!acc[s.dia]) acc[s.dia]=0;
+        acc[s.dia]+=s.durationSec;
+    });
+    const labels = Object.keys(acc).map(d=>"Día "+d);
+    const values = Object.values(acc);
+
+    if(chartDias) chartDias.destroy();
+    chartDias = new Chart(document.getElementById("chartDias"),{
+        type:"line",
+        data:{ labels, datasets:[{ label:"Segundos", data:values, tension:0.3 }] }
+    });
+}
+
+/* ================================
+   7. Render TOTAL
+================================ */
+function renderTodo(){
+    const ss = filtrarSesiones();
+    renderResumen(ss);
+    renderTabla(ss);
+    renderChartActividades(ss);
+    renderChartDias(ss);
+}
+
+renderTodo();
 </script>
 
 </body>
 </html>
+
+
 
 
