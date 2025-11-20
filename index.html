@@ -262,6 +262,7 @@
 
 <!-- 🔵 SCRIPT -->
 <script type="module">
+  let filas = [];
 
 /* --- FIREBASE (modular v11) --- */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
@@ -317,7 +318,6 @@ let timers = [];
 let dayStarted = null;
 let dayEnded = null;
 let currentUid = null;
-  let filas = [];
 
 
 // Para asegurar que "timer completado" solo se loguea una vez por timer por sesión:
@@ -1259,6 +1259,7 @@ localStorage.setItem("registroFilas", JSON.stringify(filas));
 
 </body>
 </html>
+
 
 
 
