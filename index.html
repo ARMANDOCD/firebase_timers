@@ -676,55 +676,50 @@ window.editTimer = async i => {
 
 /* -------- TIMERS acciones -------- */
 
-window.toggleTimer = async i => {
-  if (!dayStarted) return alert("Primero inicia el día.");
-  
+window.toggleTimer = async (i) => {
   const t = timers[i];
-  const timerId = t.createdAt;
+  if (!t) return;
+
+  if (!dayStarted) {
+    alert("Primero inicia el día.");
+    return;
+  }
 
   if (!t.running) {
-    // === iniciar ===
+    // ======== INICIAR ========
     t.running = true;
-    // startedAt absoluto (para sincronización entre dispositivos)
-    t.startedAt = Date.now();              // ms absolute
-    // marcador local de alta precisión para esta sesión
+
+    // timestamp ABSOLUTO a guardar en Firebase (sin performance)
+    t.startedAt = Date.now();
+
+    // referencia local SOLO para esta pestaña
     t.sessionStartPerf = performance.now();
-    // opcional: startedAtReal en ISO si quieres tener la cadena
-    t.startedAtReal = new Date().toISOString();
 
     await save();
-
-    logEvento(currentUid, "timer_iniciado", {
-      timerId,
-      name: t.name,
-      elapsedAntes: t.elapsed // segundos ya acumulados antes de iniciar esta sesión
-    });
 
   } else {
-    // === pausar ===
-    if (t.startedAt) {
-      // calcular delta con el reloj absoluto (Date.now) — esto es lo que va a quedar en DB y eventos
-      const deltaSec = Math.floor((Date.now() - t.startedAt) / 1000);
-      t.elapsed = (Number(t.elapsed) || 0) + Math.max(0, deltaSec);
+    // ======== PAUSAR ========
 
-      // borrar campos de ejecución
-      delete t.startedAt;
-      delete t.sessionStartPerf;
-      delete t.startedAtReal;
+    if (t.startedAt) {
+      // calcular cuánto avanzó desde el último start
+      const deltaSec = Math.floor((Date.now() - t.startedAt) / 1000);
+
+      t.elapsed = (Number(t.elapsed) || 0) + Math.max(deltaSec, 0);
     }
 
+    // detener timer
     t.running = false;
-    await save();
 
-    logEvento(currentUid, "timer_pausado", {
-      timerId,
-      name: t.name,
-      elapsed: t.elapsed // segundos acumulados reales
-    });
+    // IMPORTANTÍSIMO: NO borres t.elapsed
+    t.startedAt = null;
+    delete t.sessionStartPerf;
+
+    await save();
   }
 
   renderTimers();
 };
+
 
 
 
@@ -1169,6 +1164,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
