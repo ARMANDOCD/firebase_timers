@@ -295,7 +295,8 @@ const auth = getAuth(app);
 /* -------- ESTADO GLOBAL -------- */
 let dbRef = null;
 let currentUid = null;
-let timers = {};      // timers como objeto: id -> timer
+let timers = {};        // timers como objeto: id -> timer
+let timersOrder = [];   // array con ids en orden visual
 let dayStarted = null;
 let dayEnded = null;
 let eventosRefGlobal = null;
@@ -346,6 +347,7 @@ onAuthStateChanged(auth, user => {
     document.getElementById("mainControls").classList.add("hidden");
 
     timers = {};
+    timersOrder = [];
     renderTimers();
   }
 });
@@ -359,6 +361,11 @@ function listen() {
     dayStarted = data.dayStarted || null;
     dayEnded = data.dayEnded || null;
     timers = data.timers || {}; // objeto de timers
+    timersOrder = Array.isArray(data.timersOrder) ? data.timersOrder : Object.keys(timers).sort((a,b) => (timers[a]?.createdAt||0) - (timers[b]?.createdAt||0));
+    // Exponer snapshot para estadisticas
+    window.currentTimersSnapshot = timers;
+    window.timersOrder = timersOrder;
+    window.computeElapsedSec = computeElapsedSec;
     // limpiar completions por sesión si quieres (opcional)
     renderTimers();
   });
@@ -437,6 +444,18 @@ async function removeTimerFromDb(timerId){
   }
 }
 
+async function saveTimersOrder(){
+  if(!currentUid) return;
+  try {
+    await update(ref(db, `usuarios/${currentUid}/cronometros`), {
+      timersOrder,
+      updatedAt: serverTimestamp()
+    });
+  } catch(e){
+    console.error("Error guardando timersOrder", e);
+  }
+}
+
 async function saveDay(){
   if(!currentUid) return;
   try {
@@ -509,7 +528,11 @@ document.getElementById("createTimerBtn").onclick = async () => {
 
   // actualizar local y db
   timers[timerId] = newTimer;
+  // push al order
+  timersOrder.push(timerId);
+
   await saveTimer(timerId, newTimer);
+  await saveTimersOrder();
 
   // log
   await logEvento(currentUid, "timer_creado", {
@@ -534,12 +557,18 @@ function renderTimers(){
   const container = document.getElementById("timers-container");
   container.innerHTML = "";
 
-  // ordenar por createdAt asc
-  const ids = Object.keys(timers).sort((a,b) => (timers[a]?.createdAt || 0) - (timers[b]?.createdAt || 0));
+  // ids en el orden deseado: primero los de timersOrder (filtrando que existan), luego cualquier timer suelto
+  const orderedFromOrder = timersOrder.filter(id => id in timers);
+  const rest = Object.keys(timers).filter(id => !orderedFromOrder.includes(id)).sort((a,b) => (timers[a]?.createdAt||0) - (timers[b]?.createdAt||0));
+  const ids = [...orderedFromOrder, ...rest];
 
-  // calcular totales para dayInfo
-  const totalTargetSeconds = ids.reduce((sum, id) => sum + ( (timers[id].target || 0) * 60 ), 0);
-  const totalElapsedSeconds = ids.reduce((sum, id) => sum + computeElapsedSec(timers[id]), 0);
+  // Exponer snapshot para estadisticas
+  window.currentTimersSnapshot = timers;
+  window.timersOrder = timersOrder;
+
+  // calcular totales para dayInfo usando TODOS los timers
+  const totalTargetSeconds = Object.values(timers).reduce((sum, t) => sum + ((Number(t.target)||0) * 60), 0);
+  const totalElapsedSeconds = Object.values(timers).reduce((sum, t) => sum + computeElapsedSec(t), 0);
 
   const dayInfoDiv = document.getElementById("dayInfo");
   if (dayStarted) {
@@ -565,6 +594,8 @@ function renderTimers(){
 
     const div = document.createElement("div");
     div.className = "timer" + (t.completed ? " completed" : "");
+    div.dataset.timerId = id;
+    div.draggable = true;
 
     div.innerHTML = `
       <h3>${escapeHtml(t.name || "")}</h3>
@@ -584,6 +615,9 @@ function renderTimers(){
 
     container.appendChild(div);
   });
+
+  // habilitar drag & drop tras renderizar
+  enableDragAndDrop();
 }
 
 
@@ -665,6 +699,13 @@ window.deleteTimer = async id => {
 
   await removeTimerFromDb(id);
   delete timers[id];
+
+  // quitar del order si existe y persistir
+  const idx = timersOrder.indexOf(id);
+  if(idx !== -1){
+    timersOrder.splice(idx,1);
+    await saveTimersOrder();
+  }
 
   await logEvento(currentUid, "timer_borrado", {
     timerId: id,
@@ -1018,6 +1059,55 @@ document.getElementById("addTimerBtn").onclick = () =>
   document.getElementById("formSection").classList.toggle("hidden");
 
 
+/* -------- DRAG & DROP (compatible con timersOrder) -------- */
+
+let draggedId = null;
+
+function enableDragAndDrop(){
+  const container = document.getElementById("timers-container");
+  const children = Array.from(container.querySelectorAll(".timer"));
+
+  children.forEach(child => {
+    child.ondragstart = e => {
+      draggedId = child.dataset.timerId;
+      try { e.dataTransfer.setData("text/plain", draggedId); } catch(_) {}
+    };
+
+    child.ondragover = e => {
+      e.preventDefault();
+    };
+
+    child.ondrop = e => {
+      e.preventDefault();
+      const dropTarget = e.target.closest(".timer");
+      if(!dropTarget) return;
+
+      const targetId = dropTarget.dataset.timerId;
+      if(!draggedId || !targetId || draggedId === targetId) return;
+
+      // reordenar timersOrder en memoria
+      const fromIndex = timersOrder.indexOf(draggedId);
+      const toIndex = timersOrder.indexOf(targetId);
+
+      // Si timersOrder no contiene alguno (casos raros), reconstruir primero
+      if(fromIndex === -1 || toIndex === -1){
+        timersOrder = Array.from(container.querySelectorAll(".timer")).map(d => d.dataset.timerId);
+      } else {
+        timersOrder.splice(fromIndex, 1);
+        const insertIndex = timersOrder.indexOf(targetId);
+        timersOrder.splice(insertIndex, 0, draggedId);
+      }
+
+      // persistir
+      saveTimersOrder().catch(e => console.error(e));
+
+      // re-render UI con nuevo orden
+      renderTimers();
+      draggedId = null;
+    };
+  });
+}
+
 /* ===========================
    ====== FIN registro UI =====
    =========================== */
@@ -1029,6 +1119,8 @@ document.getElementById("addTimerBtn").onclick = () =>
 
 </body>
 </html>
+
+
 
 
 
