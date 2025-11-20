@@ -935,8 +935,55 @@ async function renderRegistroEventos(){
     // prefer elapsed fields if present
     const startElapsed = startEv.elapsedAntes !== undefined ? startEv.elapsedAntes : (startEv.elapsed || null);
     const endElapsed = endEv.elapsed !== undefined ? endEv.elapsed : (endEv.elapsedAntes !== undefined ? endEv.elapsedAntes : null);
-    let durationSec;
-    durationSec = Math.max(0, Math.floor((new Date(endTs) - new Date(startTs)) / 1000));
+    // --- Cálculo REAL de duración usando los mismos criterios que la tabla ---
+function calcDuracion(startEv, endEv){
+  const start = (
+      startEv.startElapsed ??
+      startEv.elapsedAntes ??
+      startEv.elapsed ??
+      null
+  );
+
+  const end = (
+      endEv.endElapsed ??
+      endEv.elapsed ??
+      endEv.elapsedAntes ??
+      null
+  );
+
+  if (start !== null && end !== null && end >= start) {
+    return end - start;
+  }
+
+  // marcas HH:MM:SS
+  function parseMarca(m){
+    if (!m) return null;
+    const p = String(m).split(":").map(Number);
+    if (p.length === 3) return p[0]*3600 + p[1]*60 + p[2];
+    if (p.length === 2) return p[0]*60 + p[1];
+    return null;
+  }
+
+  const m1 = parseMarca(startEv.marca);
+  const m2 = parseMarca(endEv.marca);
+  if (m1 !== null && m2 !== null && m2 >= m1){
+    return m2 - m1;
+  }
+
+  // fallback: timestamps
+  try{
+    const t1 = new Date(startEv.timestamp).getTime();
+    const t2 = new Date(endEv.timestamp).getTime();
+    if(!isNaN(t1) && !isNaN(t2) && t2 >= t1){
+      return Math.floor((t2 - t1)/1000);
+    }
+  }catch(e){}
+
+  return 0;
+}
+
+let durationSec = calcDuracion(startEv, endEv);
+
 
 
     // determine dia based on 'dias' intervals
@@ -1097,6 +1144,7 @@ document.getElementById("btnEstadisticas").onclick = () => {
 
 </body>
 </html>
+
 
 
 
