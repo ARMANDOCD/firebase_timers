@@ -1025,16 +1025,7 @@ async function renderRegistroEventos(){
   };
 
 // --- ABRIR ESTADÍSTICAS ---
-document.getElementById("btnEstadisticas").onclick = () => {
-    if (!window.registroProcesado) {
-        alert("Todavía no se generó el registro de eventos.");
-        return;
-    }
 
-    localStorage.setItem("registroProcesado", JSON.stringify(window.registroProcesado));
-
-    window.open("estadisticas.html", "_blank");
-};
 
   
   // notificar a quien escuche
@@ -1084,7 +1075,16 @@ function escapeHtml(unsafe) {
     .replaceAll('"',"&quot;")
     .replaceAll("'", "&#039;");
 }
+document.getElementById("btnEstadisticas").onclick = () => {
+    if (!window.registroProcesado) {
+        alert("Todavía no se generó el registro de eventos.");
+        return;
+    }
 
+    localStorage.setItem("registroProcesado", JSON.stringify(window.registroProcesado));
+
+    window.open("estadisticas.html", "_blank");
+};
 /* ===========================
    ====== FIN registro UI =====
    =========================== */
@@ -1097,6 +1097,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
