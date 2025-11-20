@@ -931,153 +931,265 @@ eventosArr.forEach(ev => {
 });
 
 (function createAndExposeRegistroProcesado(){
-  // Construir sesiones (pares inicio -> cierre) a partir de eventosArr
-  const openMap = {}; // timerId -> { startEv }
-  const sessions = [];
-
-  function closeOpenSession(timerId, endEv, closingType){
-    const o = openMap[timerId];
-    if(!o) return;
-    const startEv = o.startEv;
-    const startTs = startEv.timestamp;
-    const endTs = endEv.timestamp || new Date().toISOString();
-    // prefer elapsed fields if present
-    const startElapsed = startEv.elapsedAntes !== undefined ? startEv.elapsedAntes : (startEv.elapsed || null);
-    const endElapsed = endEv.elapsed !== undefined ? endEv.elapsed : (endEv.elapsedAntes !== undefined ? endEv.elapsedAntes : null);
-    // --- Cálculo REAL de duración usando los mismos criterios que la tabla ---
-function calcDuracion(startEv, endEv) {
-    // Leer marca como HH:MM:SS (preferido)
-    function parseMarca(m) {
-        if (!m) return null;
-        const p = m.split(":").map(Number);
-        if (p.length === 3) return p[0]*3600 + p[1]*60 + p[2];
-        return null;
+  // --- util parse marca
+  function parseMarca(m){
+    if(m === undefined || m === null) return null;
+    if(typeof m === 'number') return Number(m);
+    const s = String(m).trim();
+    if(!s) return null;
+    if(s.includes(':')){
+      const p = s.split(':').map(x=>Number(x));
+      if(p.length===3) return p[0]*3600 + p[1]*60 + p[2];
+      if(p.length===2) return p[0]*60 + p[1];
+      return null;
     }
-
-    // 1) INTENTAR por marca
-    const m1 = parseMarca(startEv.marca);
-    const m2 = parseMarca(endEv.marca);
-    if (m1 !== null && m2 !== null && m2 >= m1) {
-        return m2 - m1;
-    }
-
-    // 2) INTENTAR por elapsed acumulado
-    const sEl = startEv.startElapsed ?? startEv.elapsedAntes ?? startEv.elapsed ?? null;
-    const eEl = endEv.endElapsed ?? endEv.elapsed ?? endEv.elapsedAntes ?? null;
-
-    if (sEl !== null && eEl !== null && eEl >= sEl) {
-        return eEl - sEl;
-    }
-
-    // 3) Fallback final: timestamps
-    try {
-        const t1 = Date.parse(startEv.timestamp);
-        const t2 = Date.parse(endEv.timestamp);
-        if (!isNaN(t1) && !isNaN(t2) && t2 >= t1) {
-            return Math.floor((t2 - t1) / 1000);
-        }
-    } catch(e){}
-
-    return 0;
-}
-
-
-let durationSec = calcDuracion(startEv, endEv);
-
-
-
-    // determine dia based on 'dias' intervals
-    let diaNum = null;
-    for(const d of dias){
-      const s = new Date(d.inicio);
-      const e = d.fin ? new Date(d.fin) : null;
-      const st = new Date(startTs);
-      if(e){
-        if(st >= s && st <= e){ diaNum = d.dia; break; }
-      } else {
-        if(st >= s){ diaNum = d.dia; break; }
-      }
-    }
-    const dateKey = (startTs) ? new Date(startTs).toISOString().slice(0,10) : null;
-
-    sessions.push({
-      timerId: timerId || null,
-      name: (startEv.name || (timersMeta && timersMeta[timerId] && timersMeta[timerId].name) || null),
-      startTs,
-      endTs,
-      startElapsed: startElapsed !== undefined ? startElapsed : null,
-      endElapsed: endElapsed !== undefined ? endElapsed : null,
-      durationSec,
-      dia: diaNum,
-      dateKey,
-      objetivoMin: objetivosPorTimer[timerId] ?? null,
-      closingType: closingType || (endEv && endEv.tipo) || null
-    });
-
-    delete openMap[timerId];
+    const n = Number(s);
+    return isNaN(n) ? null : n;
   }
 
-  // recorrer eventos ordenados asc
+  // --- construir objetivosPorTimer desde events (soporta varios nombres de campo)
+  const objetivosPorTimer = {};
+  const nombresPorTimer = {};
   eventosArr.forEach(ev => {
-    const tipo = ev.tipo;
-    const tid = ev.timerId || null;
-    if(tipo === "timer_iniciado" && tid){
-      // abrir
-      openMap[tid] = { startEv: ev };
-    } else if(tid && (tipo === "timer_pausado" || tipo === "timer_reseteado" || tipo === "timer_completado" || tipo === "timer_borrado")){
-      closeOpenSession(tid, ev, tipo);
-    } else if(tipo === "timer_borrado" && !tid){
-      // evento borrado sin timerId: ignorar
+    if(!ev || !ev.tipo) return;
+    if(ev.tipo === "timer_creado" || ev.tipo === "timer_editado"){
+      const tid = ev.timerId;
+      if(!tid) return;
+      // posible campos que contienen objetivo
+      const cand = ['target','objetivo','targetMin','target_minutes','value','metaTarget','meta','payloadTarget'];
+      let found = null;
+      for(const k of cand){
+        if(ev[k] !== undefined && ev[k] !== null && ev[k] !== "") { found = ev[k]; break; }
+      }
+      // también puede venir dentro de ev.meta o ev.data
+      if(found === null && ev.meta && ev.meta.target !== undefined) found = ev.meta.target;
+      if(found === null && ev.data && ev.data.target !== undefined) found = ev.data.target;
+      if(found !== null) objetivosPorTimer[tid] = Number(found);
+      if(ev.name) nombresPorTimer[tid] = ev.name;
     }
-    // timer_creado / timer_editado no abren ni cierran sesiones
   });
 
-  // cerrar sesiones abiertas usando day.fin si existe o now
+  // --- helper para sacar elapsed acumulado de un evento
+  function extractElapsedFromEvent(ev){
+    if(!ev) return null;
+    const keys = ['endElapsed','startElapsed','elapsed','elapsedAntes','marcaElapsed','marca_seconds','marcaSec'];
+    for(const k of keys){
+      if(ev[k] !== undefined && ev[k] !== null && ev[k] !== '') {
+        const n = Number(ev[k]);
+        if(!isNaN(n)) return n;
+      }
+    }
+    // si tiene marca textual
+    if(ev.marca) {
+      const pm = parseMarca(ev.marca);
+      if(pm !== null) return pm;
+    }
+    return null;
+  }
+
+  // --- calculo de duracion (misma lógica usada más abajo)
+  function calcDuracion(startEv, endEv){
+    // 1) marcas HH:MM:SS preferidas
+    const m1 = parseMarca(startEv && (startEv.marca || startEv.marcaStr || startEv.marca_str));
+    const m2 = parseMarca(endEv && (endEv.marca || endEv.marcaStr || endEv.marca_str));
+    if(m1 !== null && m2 !== null && m2 >= m1) return Math.max(0, Math.floor(m2 - m1));
+
+    // 2) elapsed acumulado
+    const sEl = startEv && (startEv.startElapsed ?? startEv.elapsedAntes ?? startEv.elapsed ?? null);
+    const eEl = endEv && (endEv.endElapsed ?? endEv.elapsed ?? endEv.elapsedAntes ?? null);
+    if(sEl !== null && eEl !== null && !isNaN(sEl) && !isNaN(eEl) && eEl >= sEl) return Math.max(0, Math.floor(Number(eEl) - Number(sEl)));
+
+    // 3) fallback timestamps
+    try {
+      const st = startEv && (typeof startEv.timestamp === 'number' ? startEv.timestamp : Date.parse(startEv.timestamp));
+      const en = endEv && (typeof endEv.timestamp === 'number' ? endEv.timestamp : Date.parse(endEv.timestamp));
+      if(!isNaN(st) && !isNaN(en) && en >= st) return Math.max(0, Math.floor((en - st) / 1000));
+    } catch(e){}
+    return 0;
+  }
+
+  // --- construir sesiones con lookahead para evitar cierres "duplicados" (timer_completado vs timer_pausado)
+  const sessions = [];
+  const openMap = {}; // timerId -> startEv
+
+  // convertimos a for-index para poder mirar adelante
+  for(let i=0;i<eventosArr.length;i++){
+    const ev = eventosArr[i];
+    const tipo = ev && ev.tipo;
+    const tid = ev && ev.timerId ? ev.timerId : null;
+
+    // abrir
+    if(tipo === 'timer_iniciado' && tid){
+      // si ya hay un open, lo sobreescribimos (pero podríamos cerrarlo automáticamente si queremos)
+      openMap[tid] = ev;
+      continue;
+    }
+
+    // si es evento de cierre potencial
+    const cierres = ['timer_pausado','timer_reseteado','timer_completado','timer_borrado'];
+    if(tid && cierres.includes(tipo)){
+      const startEv = openMap[tid];
+      if(!startEv){
+        // no hay inicio abierto: ignorar
+        continue;
+      }
+
+      // lookahead: buscar events posteriores (hasta X indices o hasta próximo timer_iniciado para este tid)
+      let bestEndEv = ev;
+      let bestScore = -Infinity; // prefer larger elapsed or later timestamp
+      // compute score for a given endEv
+      const scoreOf = (endEv) => {
+        const eEl = extractElapsedFromEvent(endEv);
+        const ts = (typeof endEv.timestamp === 'number') ? endEv.timestamp : Date.parse(endEv.timestamp);
+        let score = 0;
+        if(eEl !== null && !isNaN(eEl)) score += eEl * 1000; // heavy weight
+        if(!isNaN(ts)) score += Math.floor(ts/1000);
+        // prefer tipos: pausado > completado > reset > borrado
+        const pref = { 'timer_pausado':4, 'timer_completado':3, 'timer_reseteado':2, 'timer_borrado':1 };
+        score += (pref[endEv.tipo] || 0);
+        return score;
+      };
+
+      // start scanning ahead (look max 8 events or until next timer_iniciado for same tid)
+      for(let j=i; j<Math.min(eventosArr.length, i+12); j++){
+        const candidate = eventosArr[j];
+        if(!candidate) continue;
+        if(candidate.timerId !== tid) continue;
+        if(candidate.tipo === 'timer_iniciado') break; // nuevo inicio cancela búsqueda
+        if(!cierres.includes(candidate.tipo)) continue;
+
+        const sc = scoreOf(candidate);
+        if(sc > bestScore){
+          bestScore = sc;
+          bestEndEv = candidate;
+        }
+      }
+
+      // compute duration using startEv & bestEndEv
+      const durationSec = calcDuracion(startEv, bestEndEv);
+
+      // determine dia using startEv.timestamp and dias array
+      let diaNum = null;
+      const st = new Date(startEv.timestamp);
+      for(const d of dias){
+        const s = new Date(d.inicio);
+        const e = d.fin ? new Date(d.fin) : null;
+        if(e){
+          if(st >= s && st <= e){ diaNum = d.dia; break; }
+        } else {
+          if(st >= s){ diaNum = d.dia; break; }
+        }
+      }
+      const dateKey = startEv && startEv.timestamp ? (new Date(startEv.timestamp)).toISOString().slice(0,10) : null;
+
+      // nombre preferido
+      const name = startEv.name || nombresPorTimer[tid] || (timersMeta && timersMeta[tid] && timersMeta[tid].name) || null;
+
+      // objetivo - prioridad: objetivosPorTimer -> timersMeta -> startEv.target -> null
+      const objetivoMin = (objetivosPorTimer[tid] !== undefined && objetivosPorTimer[tid] !== null)
+                            ? Number(objetivosPorTimer[tid])
+                            : (timersMeta && timersMeta[tid] && (timersMeta[tid].target !== undefined)
+                                ? Number(timersMeta[tid].target)
+                                : (startEv && (startEv.target !== undefined) ? Number(startEv.target) : null)
+                              );
+
+      sessions.push({
+        timerId: tid,
+        name,
+        startTs: startEv.timestamp,
+        endTs: bestEndEv.timestamp || null,
+        startElapsed: (startEv.startElapsed ?? startEv.elapsedAntes ?? startEv.elapsed ?? null),
+        endElapsed: (bestEndEv.endElapsed ?? bestEndEv.elapsed ?? bestEndEv.elapsedAntes ?? null),
+        durationSec,
+        dia: diaNum,
+        dateKey,
+        objetivoMin: (objetivoMin !== undefined ? (isNaN(Number(objetivoMin)) ? null : Number(objetivoMin)) : null),
+        closingType: bestEndEv.tipo || tipo
+      });
+
+      // eliminar openMap entry
+      delete openMap[tid];
+
+      // advance i to the index of bestEndEv to avoid creating extra sessions for intermediate "completado" markers
+      // find index of bestEndEv
+      let idxBest = i;
+      for(let k=i; k<eventosArr.length && k<=i+12; k++){
+        if(eventosArr[k] === bestEndEv){ idxBest = k; break; }
+      }
+      i = idxBest; // the for loop will increment i further in next iteration
+    }
+  } // end for eventosArr
+
+  // cerrar sesiones abiertas usando day.fin si existe o now (misma lógica, usando calcDuracion)
   const nowIso = new Date().toISOString();
   Object.keys(openMap).forEach(timerId => {
-    // intentar cerrar en el fin del día si existe el día correspondiente
     const openObj = openMap[timerId];
-    const startTs = openObj.startEv.timestamp;
-    // buscar dia que corresponda al start
+    const startEv = openObj;
+    // intentar cerrar en el fin del día si existe el día correspondiente
     let closed = false;
     for(const d of dias){
       const s = new Date(d.inicio);
       const e = d.fin ? new Date(d.fin) : null;
-      const st = new Date(startTs);
+      const st = new Date(startEv.timestamp);
       if(e && st >= s && st <= e){
-        // cerrar at d.fin
         const fakeEndEv = { timestamp: d.fin, tipo: "auto_cierre_por_day_end" };
-        closeOpenSession(timerId, fakeEndEv, "auto_cierre_por_day_end");
+        const durationSec = calcDuracion(startEv, fakeEndEv);
+        const dateKey = (new Date(startEv.timestamp)).toISOString().slice(0,10);
+        sessions.push({
+          timerId,
+          name: startEv.name || nombresPorTimer[timerId] || (timersMeta && timersMeta[timerId] && timersMeta[timerId].name) || null,
+          startTs: startEv.timestamp,
+          endTs: d.fin,
+          startElapsed: (startEv.startElapsed ?? startEv.elapsedAntes ?? startEv.elapsed ?? null),
+          endElapsed: null,
+          durationSec,
+          dia: d.dia,
+          dateKey,
+          objetivoMin: (objetivosPorTimer[timerId] !== undefined) ? Number(objetivosPorTimer[timerId]) : ((timersMeta && timersMeta[timerId] && timersMeta[timerId].target !== undefined) ? Number(timersMeta[timerId].target) : null),
+          closingType: "auto_cierre_por_day_end"
+        });
         closed = true;
         break;
       }
     }
     if(!closed){
-      // cerrar at now
       const fakeEndEv = { timestamp: nowIso, tipo: "auto_cierre_por_now" };
-      closeOpenSession(timerId, fakeEndEv, "auto_cierre_por_now");
+      const durationSec = calcDuracion(startEv, fakeEndEv);
+      const dateKey = (new Date(startEv.timestamp)).toISOString().slice(0,10);
+      sessions.push({
+        timerId,
+        name: startEv.name || nombresPorTimer[timerId] || (timersMeta && timersMeta[timerId] && timersMeta[timerId].name) || null,
+        startTs: startEv.timestamp,
+        endTs: nowIso,
+        startElapsed: (startEv.startElapsed ?? startEv.elapsedAntes ?? startEv.elapsed ?? null),
+        endElapsed: null,
+        durationSec,
+        dia: null,
+        dateKey,
+        objetivoMin: (objetivosPorTimer[timerId] !== undefined) ? Number(objetivosPorTimer[timerId]) : ((timersMeta && timersMeta[timerId] && timersMeta[timerId].target !== undefined) ? Number(timersMeta[timerId].target) : null),
+        closingType: "auto_cierre_por_now"
+      });
     }
   });
 
-  // timersMeta ya la tienes (construida antes)
+  // timersMeta ya la tienes (construida antes). Queremos exponer tambien timersMeta completo basado en objetivosPorTimer
+  const finalTimersMeta = Object.assign({}, timersMeta || {});
+  // copiar objetivos detectados por eventos
+  Object.keys(objetivosPorTimer).forEach(k => {
+    finalTimersMeta[k] = Object.assign({}, finalTimersMeta[k] || {}, { name: finalTimersMeta[k] && finalTimersMeta[k].name ? finalTimersMeta[k].name : (nombresPorTimer[k] || (finalTimersMeta[k] && finalTimersMeta[k].name) || null), target: Number(objetivosPorTimer[k]) });
+  });
+
   window.registroProcesado = {
-    dias: dias.map(d => ({
-      dia: d.dia,
-      inicio: d.inicio,
-      fin: d.fin || null,
-      dateKeys: d.rawInicio && d.rawInicio.timestamp ? [ (new Date(d.rawInicio.timestamp)).toISOString().slice(0,10) ] : (d.dateKeys || [])
-    })),
+    dias: dias.map(d => ({ dia: d.dia, inicio: d.inicio, fin: d.fin || null })),
     sessions: sessions,
-    timersMeta: timersMeta || {}
+    timersMeta: finalTimersMeta
   };
 
-// --- ABRIR ESTADÍSTICAS ---
-
-
-  
   // notificar a quien escuche
   window.dispatchEvent(new CustomEvent('registroProcesadoReady', { detail: window.registroProcesado }));
+
 })();
+
 
 
     
@@ -1144,6 +1256,7 @@ document.getElementById("btnEstadisticas").onclick = () => {
 
 </body>
 </html>
+
 
 
 
