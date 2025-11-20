@@ -111,8 +111,8 @@
   #menu {
     position: fixed;
     top: 10px;
-    right: 10px;
-    left: auto;
+    right: 10px;  /* <--- AQUI */
+    left: auto;   /* <--- AQUI */
     display: flex;
     flex-direction: column;
     gap: 5px;
@@ -165,6 +165,7 @@
   <button onclick="openSection('mainPage')">🏠 Cronómetros</button>
   <button onclick="openSection('statsGeneral')">📊 Estadísticas Generales</button>
   <button onclick="openSection('statsPersonal')">👤 Estadísticas Individuales</button>
+  <!-- NUEVO BOTÓN -->
   <button onclick="openSection('registroEventos')">📜 Registro de eventos</button>
 </div>
 
@@ -254,6 +255,8 @@
   </div>
 </section>
 
+
+
 <!-- 🔵 SCRIPT -->
 <script type="module">
 
@@ -263,12 +266,10 @@ import {
   getDatabase,
   ref,
   set,
-  update,
   onValue,
   push,
   get,
-  child,
-  serverTimestamp
+  child
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 import {
   getAuth,
@@ -292,17 +293,6 @@ const db = getDatabase(app);
 const auth = getAuth(app);
 
 
-/* -------- ESTADO GLOBAL -------- */
-let dbRef = null;
-let currentUid = null;
-let timers = {};        // timers como objeto: id -> timer
-let timersOrder = [];   // array con ids en orden visual
-let dayStarted = null;
-let dayEnded = null;
-let eventosRefGlobal = null;
-let lastEventosListener = null;
-
-
 /* -------- LOGIN -------- */
 
 document.getElementById("loginEmailBtn").onclick = async () => {
@@ -319,8 +309,15 @@ document.getElementById("loginEmailBtn").onclick = async () => {
 
 document.getElementById("logoutBtn").onclick = () => signOut(auth);
 
+let dbRef;
+let timers = [];
+let dayStarted = null;
+let dayEnded = null;
+let currentUid = null;
 
-/* -------- AUTH LISTENER / DB REF -------- */
+// Para asegurar que "timer completado" solo se loguea una vez por timer por sesión:
+const loggedCompletions = new Set();
+
 
 onAuthStateChanged(auth, user => {
   if(user){
@@ -332,9 +329,12 @@ onAuthStateChanged(auth, user => {
 
     document.getElementById("userInfo").textContent = `Conectado como: ${user.email}`;
 
-    dbRef = ref(db, `usuarios/${user.uid}/cronometros`);
+    // referencia al diaActual (tu estructura real)
+    dbRef = ref(db, `usuarios/${user.uid}/cronometros/diaActual`);
     listen();
 
+    // iniciar escucha del historial de eventos en la sección registro (se activará en renderRegistroEventos)
+    // pero podemos preparar el ref
     eventosRefGlobal = ref(db, `usuarios/${user.uid}/historialEventos`);
 
   } else {
@@ -346,29 +346,57 @@ onAuthStateChanged(auth, user => {
     document.getElementById("userSection").classList.add("hidden");
     document.getElementById("mainControls").classList.add("hidden");
 
-    timers = {};
-    timersOrder = [];
+    timers = [];
     renderTimers();
   }
 });
 
 
-/* -------- LISTENER PRINCIPAL -------- */
+/* -------- CARGA DE DATOS -------- */
 function listen() {
   onValue(dbRef, snap => {
     const data = snap.val() || {};
-    // dayStarted/dayEnded serán números (ms) si vienen de serverTimestamp
+    timers = data.timers || [];
     dayStarted = data.dayStarted || null;
     dayEnded = data.dayEnded || null;
-    timers = data.timers || {}; // objeto de timers
-    timersOrder = Array.isArray(data.timersOrder) ? data.timersOrder : Object.keys(timers).sort((a,b) => (timers[a]?.createdAt||0) - (timers[b]?.createdAt||0));
-    // Exponer snapshot para estadisticas
-    window.currentTimersSnapshot = timers;
-    window.timersOrder = timersOrder;
-    window.computeElapsedSec = computeElapsedSec;
-    // limpiar completions por sesión si quieres (opcional)
+    // Resetear loggedCompletions si cambiaste de día (evita duplicados en sesión nueva)
+    loggedCompletions.clear();
     renderTimers();
   });
+}
+
+async function save() {
+  if(!dbRef) return;
+  try {
+    await set(dbRef,{
+      timers,
+      dayStarted,
+      dayEnded,
+      updatedAt:new Date().toISOString()
+    });
+  } catch(err) {
+    console.error("Error guardando diaActual:", err);
+  }
+}
+
+
+/* -------- FUNCIÓN DE LOG DE EVENTOS (historial) -------- */
+async function logEvento(uid, tipo, dataExtra = {}) {
+  if(!uid) return;
+  try {
+    const eventosRef = ref(db, `usuarios/${uid}/historialEventos`);
+    const evento = {
+      timestamp: new Date().toISOString(),
+      tipo,
+      usuario: uid,
+      ...dataExtra
+    };
+    const newRef = push(eventosRef);
+    await set(newRef, evento);
+    // no bloqueamos la UI; si quieres usar el resultado, haz await desde el caller
+  } catch (e) {
+    console.error("Error logeando evento:", e, tipo, dataExtra);
+  }
 }
 
 
@@ -385,107 +413,11 @@ function formatTimeFromSeconds(s){
 
 function formatLocal(ts){
   try {
-    if(!ts) return "";
-    // ts puede ser número (ms) o ISO
-    const d = (typeof ts === "number") ? new Date(ts) : new Date(ts);
-    return d.toLocaleString();
+    return new Date(ts).toLocaleString();
   } catch(e){
     return ts;
   }
 }
-
-function escapeHtml(unsafe) {
-  if(!unsafe && unsafe !== 0) return "";
-  return String(unsafe)
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-
-/* -------- CÁLCULO DE ELAPSED FIABLE --------
-   - saved elapsed (segundos)
-   - startedAtServer (ms timestamp) si está corriendo
-*/
-function computeElapsedSec(timer){
-  const saved = Number(timer.elapsed || 0);
-  if(!timer.running) return saved;
-
-  const startedMs = timer.startedAtServer || null; // número ms
-  if(!startedMs) return saved;
-
-  const now = Date.now();
-  const delta = Math.floor((now - startedMs) / 1000);
-  return saved + Math.max(0, delta);
-}
-
-
-/* -------- SAVE HELPERS -------- */
-
-async function saveTimer(timerId, timerObj){
-  if(!currentUid) return;
-  const p = ref(db, `usuarios/${currentUid}/cronometros/timers/${timerId}`);
-  try {
-    await set(p, timerObj);
-  } catch(e){
-    console.error("Error guardando timer", e);
-  }
-}
-
-async function removeTimerFromDb(timerId){
-  if(!currentUid) return;
-  const p = ref(db, `usuarios/${currentUid}/cronometros/timers/${timerId}`);
-  try {
-    await set(p, null);
-  } catch(e){
-    console.error("Error borrando timer", e);
-  }
-}
-
-async function saveTimersOrder(){
-  if(!currentUid) return;
-  try {
-    await update(ref(db, `usuarios/${currentUid}/cronometros`), {
-      timersOrder,
-      updatedAt: serverTimestamp()
-    });
-  } catch(e){
-    console.error("Error guardando timersOrder", e);
-  }
-}
-
-async function saveDay(){
-  if(!currentUid) return;
-  try {
-    await update(ref(db, `usuarios/${currentUid}/cronometros`), {
-      dayStarted,
-      dayEnded,
-      updatedAt: serverTimestamp()
-    });
-  } catch(e){
-    console.error("Error guardando day", e);
-  }
-}
-
-/* -------- LOG EVENTOS -------- */
-async function logEvento(uid, tipo, dataExtra = {}) {
-  if(!uid) return;
-  try {
-    const eventosRef = ref(db, `usuarios/${uid}/historialEventos`);
-    const evento = {
-      timestamp: serverTimestamp(),
-      tipo,
-      usuario: uid,
-      ...dataExtra
-    };
-    await push(eventosRef, evento);
-  } catch (e) {
-    console.error("Error logeando evento:", e, tipo, dataExtra);
-  }
-}
-
 
 /* -------- NAV SECTIONS -------- */
 window.openSection = function(sectionId){
@@ -512,69 +444,58 @@ document.getElementById("createTimerBtn").onclick = async () => {
 
   if(!n || !t) return alert("Nombre y minutos requeridos.");
 
-  const createdAt = Date.now();          // id único y estable (ms)
-  const timerId = String(createdAt);
+  // usamos createdAt ISO como timerId único
+  const createdAt = new Date().toISOString();
 
   const newTimer = {
     name: n,
     target: t,
     note,
-    elapsed: 0,               // segundos
+    elapsed: 0,
     running: false,
     completed: false,
-    createdAt,                // ms
-    startedAtServer: null     // ms (cuando se inicia se pone serverTimestamp())
+    createdAt
   };
 
-  // actualizar local y db
-  timers[timerId] = newTimer;
-  // push al order
-  timersOrder.push(timerId);
+  timers.push(newTimer);
 
-  await saveTimer(timerId, newTimer);
-  await saveTimersOrder();
-
-  // log
-  await logEvento(currentUid, "timer_creado", {
-    timerId,
-    name: n,
-    target: t,
-    note
-  });
-
-  // limpiar form
   document.getElementById("activityName").value="";
   document.getElementById("targetMinutes").value="";
   document.getElementById("note").value="";
   document.getElementById("formSection").classList.add("hidden");
 
+  await save();
+
+  // Log evento: timer creado
+  logEvento(currentUid, "timer_creado", {
+    timerId: createdAt,
+    name: n,
+    target: t,
+    note
+  });
+
   renderTimers();
 };
 
 
-/* -------- RENDER TIMERS -------- */
-function renderTimers(){
+/* -------- RENDER -------- */
+function renderTimers() {
   const container = document.getElementById("timers-container");
   container.innerHTML = "";
 
-  // ids en el orden deseado: primero los de timersOrder (filtrando que existan), luego cualquier timer suelto
-  const orderedFromOrder = timersOrder.filter(id => id in timers);
-  const rest = Object.keys(timers).filter(id => !orderedFromOrder.includes(id)).sort((a,b) => (timers[a]?.createdAt||0) - (timers[b]?.createdAt||0));
-  const ids = [...orderedFromOrder, ...rest];
-
-  // Exponer snapshot para estadisticas
-  window.currentTimersSnapshot = timers;
-  window.timersOrder = timersOrder;
-
-  // calcular totales para dayInfo usando TODOS los timers
-  const totalTargetSeconds = Object.values(timers).reduce((sum, t) => sum + ((Number(t.target)||0) * 60), 0);
-  const totalElapsedSeconds = Object.values(timers).reduce((sum, t) => sum + computeElapsedSec(t), 0);
+  const totalTargetSeconds = timers.reduce((sum, t) => sum + t.target * 60, 0);
+  const totalElapsedSeconds = timers.reduce((sum, t) => {
+    let display = t.elapsed;
+    if (t.running && t.startedAt) display += Math.floor((new Date() - new Date(t.startedAt)) / 1000);
+    return sum + display;
+  }, 0);
 
   const dayInfoDiv = document.getElementById("dayInfo");
+
   if (dayStarted) {
     const start = new Date(dayStarted);
     const estimatedEnd = new Date(start.getTime() + totalTargetSeconds * 1000);
-    const progress = totalTargetSeconds ? (totalElapsedSeconds / totalTargetSeconds * 100) : 0;
+    const progress = totalElapsedSeconds / totalTargetSeconds * 100 || 0;
 
     dayInfoDiv.innerHTML = `
       <p>Día iniciado: ${start.toLocaleString()}</p>
@@ -586,82 +507,130 @@ function renderTimers(){
     dayInfoDiv.classList.add("hidden");
   }
 
-  ids.forEach(id => {
-    const t = timers[id];
-    const displayElapsed = computeElapsedSec(t);
-    const pctObj = t.target ? ((displayElapsed / (t.target * 60)) * 100).toFixed(1) : "0.0";
-    const pctTotal = totalTargetSeconds ? ((displayElapsed / totalTargetSeconds) * 100).toFixed(1) : "0.0";
-
+  timers.forEach((t, i) => {
     const div = document.createElement("div");
-    div.className = "timer" + (t.completed ? " completed" : "");
-    div.dataset.timerId = id;
+    div.className = "timer draggable" + (t.completed ? " completed" : "");
     div.draggable = true;
 
+    // elapsed temporal
+    let displayElapsed = t.elapsed;
+    if (t.running && t.startedAt) {
+      displayElapsed += Math.floor((new Date() - new Date(t.startedAt)) / 1000);
+    }
+
+    const pctObj = ((displayElapsed / (t.target * 60)) * 100).toFixed(1);
+    const pctTotal = ((displayElapsed / totalTargetSeconds) * 100).toFixed(1);
+
     div.innerHTML = `
-      <h3>${escapeHtml(t.name || "")}</h3>
+      <h3>${t.name}</h3>
       <p><span>${formatTimeFromSeconds(displayElapsed)}</span></p>
       <p>Objetivo: ${t.target} min</p>
       <p>Progreso específico: ${pctObj}%</p>
       <p>Progreso general: ${pctTotal}%</p>
-      <p>Creado: ${formatLocal(t.createdAt)}</p>
-      ${t.note ? `<p><i>${escapeHtml(t.note)}</i></p>` : ""}
+      <p>Creado: ${new Date(t.createdAt).toLocaleString()}</p>
+      ${t.note ? `<p><i>${t.note}</i></p>` : ""}
       <div class="buttons">
-        <button onclick="toggleTimer('${id}')">${t.running ? "⏸️ Pausa" : "▶️ Iniciar"}</button>
-        <button onclick="resetTimer('${id}')">🔄 Reset</button>
-        <button onclick="deleteTimer('${id}')">🗑️ Borrar</button>
-        <button onclick="editTimer('${id}')">✏️ Editar</button>
+        <button onclick="toggleTimer(${i})">${t.running?"⏸️ Pausa":"▶️ Iniciar"}</button>
+        <button onclick="resetTimer(${i})">🔄 Reset</button>
+        <button onclick="deleteTimer(${i})">🗑️ Borrar</button>
+        <button onclick="editTimer(${i})">✏️ Editar</button>
       </div>
     `;
 
     container.appendChild(div);
   });
 
-  // habilitar drag & drop tras renderizar
   enableDragAndDrop();
 }
 
+setInterval(async () => {
+  if (!timers || timers.length === 0) return;
+  const now = new Date();
+  let needsSave = false;
 
-/* -------- TOGGLE (INICIAR / PAUSAR) -------- */
-window.toggleTimer = async id => {
-  if(!timers[id]) return;
-  const t = timers[id];
+  timers.forEach(t => {
+    if (t.running && t.startedAt) {
+      // elapsed real hasta ahora
+      const elapsedReal = t.elapsed + Math.floor((now - new Date(t.startedAt)) / 1000);
 
-  if(!dayStarted) return alert("Primero inicia el día.");
+      // marcar completado si superó objetivo
+      if (!t.completed && elapsedReal >= t.target * 60) {
+        t.completed = true;
+        needsSave = true;
 
-  if(!t.running){
-    // iniciar: escribir startedAtServer con serverTimestamp
-    t.running = true;
-    // opcional: poner valor local inmediato para evitar flicker
-    t.startedAtServer = Date.now();
-
-    // Guardar solo ese timer con startedAtServer = serverTimestamp()
-    try {
-      await set(ref(db, `usuarios/${currentUid}/cronometros/timers/${id}`), {
-        ...t,
-        startedAtServer: serverTimestamp()
-      });
-    } catch(e){
-      console.error("Error iniciando timer:", e);
+        logEvento(currentUid, "timer_completado", {
+          timerId: t.createdAt,
+          name: t.name,
+          elapsed: elapsedReal
+        });
+      }
     }
+  });
 
-    await logEvento(currentUid, "timer_iniciado", {
-      timerId: id,
+  if (needsSave) await save();
+
+  renderTimers(); // refresca UI cada segundo
+}, 1000);
+
+
+/* ---------- EDITAR ----------- */
+window.editTimer = async i => {
+  const old = { target: timers[i].target, note: timers[i].note, name: timers[i].name };
+  const newTarget = prompt("Nuevo objetivo en minutos:", timers[i].target);
+  if (!newTarget || isNaN(newTarget) || newTarget <= 0) return;
+
+  timers[i].target = Number(newTarget);
+  timers[i].completed = false;
+
+  await save();
+
+  // Log cambio
+  logEvento(currentUid, "timer_editado", {
+    timerId: timers[i].createdAt,
+    cambios: {
+      target: { antes: old.target, despues: timers[i].target }
+    }
+  });
+
+  renderTimers();
+};
+
+
+/* -------- TIMERS acciones -------- */
+
+window.toggleTimer = async i => {
+  if (!dayStarted) return alert("Primero inicia el día.");
+  
+  const t = timers[i];
+  const timerId = t.createdAt;
+
+  if (!t.running) {
+    // === iniciar ===
+    t.running = true;
+    t.startedAt = new Date().toISOString();   // 🔥 Se registra el momento exacto del inicio
+    await save();
+
+    logEvento(currentUid, "timer_iniciado", {
+      timerId,
       name: t.name,
       elapsedAntes: t.elapsed
     });
 
   } else {
-    // pausar: calcular elapsed real y guardar
-    const realElapsed = computeElapsedSec(t);
+    // === pausar ===
+    const nowIso = new Date().toISOString();
+
+    if (t.startedAt) {
+      const deltaSec = Math.floor((new Date(nowIso) - new Date(t.startedAt)) / 1000);
+      t.elapsed += Math.max(0, deltaSec);     // 🔥 Se calcula el tiempo REAL
+      delete t.startedAt;
+    }
 
     t.running = false;
-    t.elapsed = realElapsed;
-    t.startedAtServer = null;
+    await save();
 
-    await saveTimer(id, t);
-
-    await logEvento(currentUid, "timer_pausado", {
-      timerId: id,
+    logEvento(currentUid, "timer_pausado", {
+      timerId,
       name: t.name,
       elapsed: t.elapsed
     });
@@ -671,120 +640,145 @@ window.toggleTimer = async id => {
 };
 
 
-/* -------- RESET -------- */
-window.resetTimer = async id => {
-  if(!timers[id]) return;
-  const prev = timers[id].elapsed || 0;
+window.resetTimer = async i => {
+  const timerId = timers[i].createdAt;
+  const prevElapsed = timers[i].elapsed;
+  timers[i].elapsed=0;
+  timers[i].running=false;
+  timers[i].completed=false;
+  await save();
 
-  timers[id].elapsed = 0;
-  timers[id].running = false;
-  timers[id].completed = false;
-  timers[id].startedAtServer = null;
+  logEvento(currentUid, "timer_reseteado", {
+    timerId,
+    prevElapsed
+  });
 
-  await saveTimer(id, timers[id]);
+  renderTimers();
+};
 
-  await logEvento(currentUid, "timer_reseteado", {
-    timerId: id,
-    prevElapsed: prev
+window.deleteTimer = async i => {
+  const timer = timers[i];
+  timers.splice(i,1);
+  await save();
+
+  logEvento(currentUid, "timer_borrado", {
+    timerId: timer.createdAt,
+    name: timer.name,
+    target: timer.target,
+    elapsed: timer.elapsed
   });
 
   renderTimers();
 };
 
 
-/* -------- DELETE -------- */
-window.deleteTimer = async id => {
-  if(!timers[id]) return;
-  const t = timers[id];
+/* -------- TICKER: aumenta elapsed cuando running -------- */
 
-  await removeTimerFromDb(id);
-  delete timers[id];
+/* -------- TICKER: solo refrescar UI -------- */
 
-  // quitar del order si existe y persistir
-  const idx = timersOrder.indexOf(id);
-  if(idx !== -1){
-    timersOrder.splice(idx,1);
-    await saveTimersOrder();
-  }
 
-  await logEvento(currentUid, "timer_borrado", {
-    timerId: id,
-    name: t.name,
-    target: t.target,
-    elapsed: t.elapsed
+
+
+
+/* -------- DRAG & DROP -------- */
+
+let draggedIndex=null;
+
+function enableDragAndDrop(){
+  const container = document.getElementById("timers-container");
+  const children = container.querySelectorAll(".timer");
+
+  children.forEach(child=>{
+    child.ondragstart = e => {
+      draggedIndex = [...children].indexOf(e.target);
+    };
+
+    child.ondragover = e => e.preventDefault();
+
+    child.ondrop = e => {
+      const targetIndex = [...children].indexOf(e.target.closest(".timer"));
+      if(targetIndex === -1 || draggedIndex === null) return;
+
+      const moved = timers.splice(draggedIndex,1)[0];
+      timers.splice(targetIndex,0,moved);
+
+      draggedIndex=null;
+      save();
+      renderTimers();
+    };
+  });
+}
+
+
+/* -------- DÍA -------- */
+
+document.getElementById("startDayBtn").onclick = async () => {
+  if(dayStarted) return alert("El día ya está iniciado.");
+  dayStarted = new Date().toISOString();
+  dayEnded = null;
+  await save();
+
+  // log inicio de día
+  logEvento(currentUid, "dia_iniciado", {
+    dia: (new Date()).toISOString().slice(0,10),
+    dayStarted
+  });
+
+  renderTimers();
+};
+
+document.getElementById("endDayBtn").onclick = async () => {
+  if(!dayStarted) return alert("Aún no iniciaste el día.");
+  dayEnded = new Date().toISOString();
+
+  // antes de borrar el estado actual, opcional: guardar snapshot del dia en event
+  const snapshot = {
+    dayStarted,
+    dayEnded,
+    timersSnapshot: JSON.parse(JSON.stringify(timers)) // copia
+  };
+
+  // reiniciar estado actual
+  timers.forEach(t=>{
+    t.running=false;
+    t.elapsed=0;
+    t.completed=false;
+  });
+
+  dayStarted = null;
+
+  await save();
+
+  // log finalizacion de dia con snapshot
+  logEvento(currentUid, "dia_finalizado", {
+    dia: (new Date()).toISOString().slice(0,10),
+    ...snapshot
   });
 
   renderTimers();
 };
 
 
-/* -------- EDIT -------- */
-window.editTimer = async id => {
-  if(!timers[id]) return;
-  const t = timers[id];
-
-  const newTarget = Number(prompt("Nuevo objetivo en minutos:", t.target));
-  if(!newTarget || newTarget <= 0) return;
-
-  const old = t.target;
-  t.target = newTarget;
-  t.completed = false;
-
-  await saveTimer(id, t);
-
-  await logEvento(currentUid, "timer_editado", {
-    timerId: id,
-    cambios: { target: { antes: old, despues: newTarget } }
-  });
-
-  renderTimers();
-};
-
-
-/* -------- RENDER TICK (solo UI) -------- */
-setInterval(() => {
-  // revisar completados y loguearlos usando la hora real calculada
-  const ids = Object.keys(timers);
-  let needsSave = false;
-  const completions = [];
-
-  ids.forEach(id => {
-    const t = timers[id];
-    const elapsed = computeElapsedSec(t);
-    if(!t.completed && elapsed >= (t.target * 60)){
-      t.completed = true;
-      completions.push({ id, elapsed });
-      needsSave = true;
-    }
-  });
-
-  // guardar cambios de completado (si los hay)
-  if(needsSave){
-    // guardamos cada timer completado individualmente
-    completions.forEach(async c => {
-      try {
-        await saveTimer(c.id, timers[c.id]);
-        await logEvento(currentUid, "timer_completado", {
-          timerId: c.id,
-          name: timers[c.id].name,
-          elapsed: c.elapsed
-        });
-      } catch(e){
-        console.error("Error guardando completion", e);
-      }
-    });
-  }
-
-  renderTimers();
-}, 1000);
+document.getElementById("addTimerBtn").onclick = () =>
+  document.getElementById("formSection").classList.toggle("hidden");
 
 
 /* =======================
    ===== REGISTRO UI =====
    ======================= */
 
+let eventosRefGlobal = null; // inicializado cuando hay user
+let lastEventosListener = null; // para desconectar si es necesario
+
 document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEventos();
 
+/**
+ * renderRegistroEventos:
+ * - lee todos los eventos desde usuarios/{uid}/historialEventos
+ * - construye intervalos de días a partir de dia_iniciado/dia_finalizado (en pares)
+ * - asigna cada evento a su día correspondiente comparando timestamps
+ * - genera la tabla
+ */
 async function renderRegistroEventos(){
 
   if(!currentUid){
@@ -792,37 +786,47 @@ async function renderRegistroEventos(){
     return;
   }
 
+  // referencia al historial completo
   const eventosRef = ref(db, `usuarios/${currentUid}/historialEventos`);
 
+  // Escucha en tiempo real y re-render cada vez que cambie
   if(lastEventosListener){
-    lastEventosListener(); // cancelar
+    // no hay handle de "off" fácil con onValue si no lo guardamos, pero onValue devuelve función de cancelación: 
+    // en modular v11 onValue devuelve función de unsubscribe
+    lastEventosListener(); // desconecta la escucha anterior
     lastEventosListener = null;
   }
 
   lastEventosListener = onValue(eventosRef, snap => {
     const raw = snap.val() || {};
+    // raw tiene keys pushId: eventoObject
     const eventosArr = Object.entries(raw).map(([key,val]) => ({ id:key, ...val }));
+    // ordenar por timestamp asc
     eventosArr.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-    // timersMeta extraction (from timer_creado events)
-    const timersMeta = {};
+    // construir mapa por timerId de metadatos (creado, objetivo, creadoAt)
+    const timersMeta = {}; // timerId -> { name, target, createdAt (timestamp string) }
     eventosArr.forEach(ev => {
       if(ev.tipo === "timer_creado" && ev.timerId){
+        // en timer_creado guardaste timerId == createdAt ISO; timestamp del evento es cuando lo creó
         timersMeta[ev.timerId] = {
           name: ev.name || ev.timerId,
           target: ev.target || null,
-          createdAt: ev.timestamp
+          createdAt: ev.timestamp // la fecha/hora del evento de creación
         };
       }
     });
 
-    // dias pairing
+    // extraer eventos dia_iniciado/dia_finalizado y emparejarlos
     const dias = [];
     const inicios = eventosArr.filter(e => e.tipo === "dia_iniciado");
     const finales = eventosArr.filter(e => e.tipo === "dia_finalizado");
 
+    // Pairing: supones que vienen en orden y siempre pares (salvo un inicio sin final si día en marcha)
+    // Recorremos los inicios y buscamos el siguiente final cuyo timestamp sea posterior
     let usedFinalIndexes = new Set();
     inicios.forEach((inicio, idx) => {
+      // buscar primera final cuyo timestamp sea >= inicio.timestamp y que no haya sido usada
       const inicioTs = new Date(inicio.timestamp);
       let matchedFinal = null;
       for(let j=0;j<finales.length;j++){
@@ -836,7 +840,7 @@ async function renderRegistroEventos(){
         }
       }
       dias.push({
-        dia: dias.length + 1,
+        dia: dias.length + 1, // numeración creciente
         inicio: inicio.timestamp,
         fin: matchedFinal ? matchedFinal.event.timestamp : null,
         rawInicioEvent: inicio,
@@ -844,6 +848,8 @@ async function renderRegistroEventos(){
       });
     });
 
+    // Si hay finales que quedaron sin emparejar (caso raro según tu confirmación), los ignoramos
+    // Construir función para asignar un evento a un día, buscando dentro de 'dias'
     function findDiaForTimestamp(ts){
       const t = new Date(ts);
       for(const d of dias){
@@ -852,25 +858,43 @@ async function renderRegistroEventos(){
         if(end){
           if(t >= start && t <= end) return d.dia;
         } else {
+          // día en curso: t >= start
           if(t >= start) return d.dia;
         }
       }
-      return null;
+      return null; // sin día asignado
     }
 
-    const eventosParaTabla = eventosArr;
+    // Filtrar solo eventos relacionados con cronómetros (o mantener todos pero marcaremos)
+    const eventosTimers = eventosArr.filter(e =>
+      e.tipo.startsWith("timer_") || e.tipo === "timer_creado" || e.tipo === "timer_editado" || e.tipo === "timer_borrado"
+    );
 
+    // Si quieres incluir también otros tipos (ej dia_iniciado/dia_finalizado) en la tabla, agrega:
+    // const eventosParaTabla = eventosArr; // pero abajo uso eventosTimers
+
+    // Para mostrar en la tabla usaremos eventosArr que contenga tanto timer events como (opcional) dia events.
+    const eventosParaTabla = eventosArr; // incluir todo, luego filtramos visualmente
+
+    // Preparamos filas
     const filas = eventosParaTabla.map(ev => {
+      // Determinar día
       const dia = findDiaForTimestamp(ev.timestamp);
-      const timerId = ev.timerId || null;
+
+      // Intentar obtener timerId y metadata
+      const timerId = ev.timerId || (ev.timerId === undefined ? null : ev.timerId);
       const meta = timerId && timersMeta[timerId] ? timersMeta[timerId] : null;
 
+      // Marca/elapsed: distintos nombres en dataExtra: elapsed, elapsedAntes, prevElapsed
       let elapsedSec = null;
       if(ev.elapsed !== undefined && ev.elapsed !== null) elapsedSec = ev.elapsed;
       else if(ev.elapsedAntes !== undefined && ev.elapsedAntes !== null) elapsedSec = ev.elapsedAntes;
       else if(ev.prevElapsed !== undefined && ev.prevElapsed !== null) elapsedSec = ev.prevElapsed;
 
+      // objetivo (en minutos)
       const objetivo = meta ? meta.target : (ev.target || null);
+
+      // nombre cronómetro: preferir ev.name (algunos eventos incluyen name), sino meta.name, sino timerId
       const nombre = ev.name || (meta ? meta.name : (timerId || ""));
 
       return {
@@ -887,98 +911,122 @@ async function renderRegistroEventos(){
       };
     });
 
+    // ordenar filas por timestamp asc
     filas.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-    // construir sesiones (start/pause/complete)
-    (function createAndExposeRegistroProcesado(){
-      const openMap = {};
-      const sessions = [];
-      function closeOpenSession(timerId, endEv, closingType){
-        const o = openMap[timerId];
-        if(!o) return;
-        const startEv = o.startEv;
-        const startTs = startEv.timestamp;
-        const endTs = endEv.timestamp || new Date().toISOString();
-        const startElapsed = startEv.elapsedAntes !== undefined ? startEv.elapsedAntes : (startEv.elapsed || null);
-        const endElapsed = endEv.elapsed !== undefined ? endEv.elapsed : (endEv.elapsedAntes !== undefined ? endEv.elapsedAntes : null);
-        const durationSec = Math.max(0, Math.floor((new Date(endTs) - new Date(startTs)) / 1000));
 
-        let diaNum = null;
-        for(const d of dias){
-          const s = new Date(d.inicio);
-          const e = d.fin ? new Date(d.fin) : null;
-          const st = new Date(startTs);
-          if(e){
-            if(st >= s && st <= e){ diaNum = d.dia; break; }
-          } else {
-            if(st >= s){ diaNum = d.dia; break; }
-          }
-        }
+/* --- SNIPPET: construir SESSIONS y exponer window.registroProcesado --- */
+/* Pegar justo después de construir `eventosArr`, `dias`, `timersMeta`, `filas` */
 
-        sessions.push({
-          timerId: timerId || null,
-          name: (startEv.name || (timersMeta && timersMeta[timerId] && timersMeta[timerId].name) || null),
-          startTs,
-          endTs,
-          startElapsed: startElapsed !== undefined ? startElapsed : null,
-          endElapsed: endElapsed !== undefined ? endElapsed : null,
-          durationSec,
-          dia: diaNum,
-          dateKey: (startTs) ? new Date(startTs).toISOString().slice(0,10) : null,
-          objetivoMin: (timersMeta && timersMeta[timerId] && timersMeta[timerId].target) ? Number(timersMeta[timerId].target) : (startEv && startEv.target ? Number(startEv.target) : null),
-          closingType: closingType || (endEv && endEv.tipo) || null
-        });
+(function createAndExposeRegistroProcesado(){
+  // Construir sesiones (pares inicio -> cierre) a partir de eventosArr
+  const openMap = {}; // timerId -> { startEv }
+  const sessions = [];
 
-        delete openMap[timerId];
+  function closeOpenSession(timerId, endEv, closingType){
+    const o = openMap[timerId];
+    if(!o) return;
+    const startEv = o.startEv;
+    const startTs = startEv.timestamp;
+    const endTs = endEv.timestamp || new Date().toISOString();
+    // prefer elapsed fields if present
+    const startElapsed = startEv.elapsedAntes !== undefined ? startEv.elapsedAntes : (startEv.elapsed || null);
+    const endElapsed = endEv.elapsed !== undefined ? endEv.elapsed : (endEv.elapsedAntes !== undefined ? endEv.elapsedAntes : null);
+    let durationSec;
+    durationSec = Math.max(0, Math.floor((new Date(endTs) - new Date(startTs)) / 1000));
+
+
+    // determine dia based on 'dias' intervals
+    let diaNum = null;
+    for(const d of dias){
+      const s = new Date(d.inicio);
+      const e = d.fin ? new Date(d.fin) : null;
+      const st = new Date(startTs);
+      if(e){
+        if(st >= s && st <= e){ diaNum = d.dia; break; }
+      } else {
+        if(st >= s){ diaNum = d.dia; break; }
       }
+    }
+    const dateKey = (startTs) ? new Date(startTs).toISOString().slice(0,10) : null;
 
-      eventosArr.forEach(ev => {
-        const tipo = ev.tipo;
-        const tid = ev.timerId || null;
-        if(tipo === "timer_iniciado" && tid){
-          openMap[tid] = { startEv: ev };
-        } else if(tid && (tipo === "timer_pausado" || tipo === "timer_reseteado" || tipo === "timer_completado" || tipo === "timer_borrado")){
-          closeOpenSession(tid, ev, tipo);
-        }
-      });
+    sessions.push({
+      timerId: timerId || null,
+      name: (startEv.name || (timersMeta && timersMeta[timerId] && timersMeta[timerId].name) || null),
+      startTs,
+      endTs,
+      startElapsed: startElapsed !== undefined ? startElapsed : null,
+      endElapsed: endElapsed !== undefined ? endElapsed : null,
+      durationSec,
+      dia: diaNum,
+      dateKey,
+      objetivoMin: (timersMeta && timersMeta[timerId] && timersMeta[timerId].target) ? Number(timersMeta[timerId].target) : (startEv && startEv.target ? Number(startEv.target) : null),
+      closingType: closingType || (endEv && endEv.tipo) || null
+    });
 
-      const nowIso = new Date().toISOString();
-      Object.keys(openMap).forEach(timerId => {
-        const openObj = openMap[timerId];
-        const startTs = openObj.startEv.timestamp;
-        let closed = false;
-        for(const d of dias){
-          const s = new Date(d.inicio);
-          const e = d.fin ? new Date(d.fin) : null;
-          const st = new Date(startTs);
-          if(e && st >= s && st <= e){
-            const fakeEndEv = { timestamp: d.fin, tipo: "auto_cierre_por_day_end" };
-            closeOpenSession(timerId, fakeEndEv, "auto_cierre_por_day_end");
-            closed = true;
-            break;
-          }
-        }
-        if(!closed){
-          const fakeEndEv = { timestamp: nowIso, tipo: "auto_cierre_por_now" };
-          closeOpenSession(timerId, fakeEndEv, "auto_cierre_por_now");
-        }
-      });
+    delete openMap[timerId];
+  }
 
-      window.registroProcesado = {
-        dias: dias.map(d => ({
-          dia: d.dia,
-          inicio: d.inicio,
-          fin: d.fin || null,
-          dateKeys: d.rawInicioEvent && d.rawInicioEvent.timestamp ? [ (new Date(d.rawInicioEvent.timestamp)).toISOString().slice(0,10) ] : (d.dateKeys || [])
-        })),
-        sessions: sessions,
-        timersMeta: timersMeta || {}
-      };
+  // recorrer eventos ordenados asc
+  eventosArr.forEach(ev => {
+    const tipo = ev.tipo;
+    const tid = ev.timerId || null;
+    if(tipo === "timer_iniciado" && tid){
+      // abrir
+      openMap[tid] = { startEv: ev };
+    } else if(tid && (tipo === "timer_pausado" || tipo === "timer_reseteado" || tipo === "timer_completado" || tipo === "timer_borrado")){
+      closeOpenSession(tid, ev, tipo);
+    } else if(tipo === "timer_borrado" && !tid){
+      // evento borrado sin timerId: ignorar
+    }
+    // timer_creado / timer_editado no abren ni cierran sesiones
+  });
 
-      window.dispatchEvent(new CustomEvent('registroProcesadoReady', { detail: window.registroProcesado }));
-    })();
+  // cerrar sesiones abiertas usando day.fin si existe o now
+  const nowIso = new Date().toISOString();
+  Object.keys(openMap).forEach(timerId => {
+    // intentar cerrar en el fin del día si existe el día correspondiente
+    const openObj = openMap[timerId];
+    const startTs = openObj.startEv.timestamp;
+    // buscar dia que corresponda al start
+    let closed = false;
+    for(const d of dias){
+      const s = new Date(d.inicio);
+      const e = d.fin ? new Date(d.fin) : null;
+      const st = new Date(startTs);
+      if(e && st >= s && st <= e){
+        // cerrar at d.fin
+        const fakeEndEv = { timestamp: d.fin, tipo: "auto_cierre_por_day_end" };
+        closeOpenSession(timerId, fakeEndEv, "auto_cierre_por_day_end");
+        closed = true;
+        break;
+      }
+    }
+    if(!closed){
+      // cerrar at now
+      const fakeEndEv = { timestamp: nowIso, tipo: "auto_cierre_por_now" };
+      closeOpenSession(timerId, fakeEndEv, "auto_cierre_por_now");
+    }
+  });
+
+  // timersMeta ya la tienes (construida antes)
+  window.registroProcesado = {
+    dias: dias.map(d => ({
+      dia: d.dia,
+      inicio: d.inicio,
+      fin: d.fin || null,
+      dateKeys: d.rawInicio && d.rawInicio.timestamp ? [ (new Date(d.rawInicio.timestamp)).toISOString().slice(0,10) ] : (d.dateKeys || [])
+    })),
+    sessions: sessions,
+    timersMeta: timersMeta || {}
+  };
+
+  // notificar a quien escuche
+  window.dispatchEvent(new CustomEvent('registroProcesadoReady', { detail: window.registroProcesado }));
+})();
 
 
+    
     // RENDER TABLA
     const tbody = document.getElementById("registroBody");
     tbody.innerHTML = "";
@@ -999,7 +1047,9 @@ async function renderRegistroEventos(){
       tbody.appendChild(tr);
     });
 
+    // Si no hay días detectados, mostrar nota
     if(dias.length === 0){
+      // opción: mostrar alerta o mensaje en la UI (aquí agregamos una fila)
       const tr = document.createElement("tr");
       tr.innerHTML = `<td colspan="7" class="small">No se detectaron pares dia_iniciado / dia_finalizado. Si existe un día en curso, aparecerá como 'en curso' (fin vacío).</td>`;
       tbody.prepend(tr);
@@ -1008,104 +1058,15 @@ async function renderRegistroEventos(){
   }); // onValue
 } // renderRegistroEventos
 
-
-/* -------- DÍA -------- */
-
-document.getElementById("startDayBtn").onclick = async () => {
-  if(dayStarted) return alert("El día ya está iniciado.");
-  dayStarted = serverTimestamp();
-  dayEnded = null;
-  await saveDay();
-
-  logEvento(currentUid, "dia_iniciado", {
-    dia: (new Date()).toISOString().slice(0,10),
-    dayStarted
-  });
-
-  renderTimers();
-};
-
-document.getElementById("endDayBtn").onclick = async () => {
-  if(!dayStarted) return alert("Aún no iniciaste el día.");
-  dayEnded = serverTimestamp();
-
-  // snapshot opcional
-  const snapshot = {
-    dayStarted,
-    dayEnded,
-    timersSnapshot: JSON.parse(JSON.stringify(timers))
-  };
-
-  // reiniciar estado local
-  Object.keys(timers).forEach(k => {
-    timers[k].running = false;
-    timers[k].elapsed = 0;
-    timers[k].completed = false;
-    timers[k].startedAtServer = null;
-  });
-
-  await saveDay();
-
-  logEvento(currentUid, "dia_finalizado", {
-    dia: (new Date()).toISOString().slice(0,10),
-    ...snapshot
-  });
-
-  renderTimers();
-};
-
-
-document.getElementById("addTimerBtn").onclick = () =>
-  document.getElementById("formSection").classList.toggle("hidden");
-
-
-/* -------- DRAG & DROP (compatible con timersOrder) -------- */
-
-let draggedId = null;
-
-function enableDragAndDrop(){
-  const container = document.getElementById("timers-container");
-  const children = Array.from(container.querySelectorAll(".timer"));
-
-  children.forEach(child => {
-    child.ondragstart = e => {
-      draggedId = child.dataset.timerId;
-      try { e.dataTransfer.setData("text/plain", draggedId); } catch(_) {}
-    };
-
-    child.ondragover = e => {
-      e.preventDefault();
-    };
-
-    child.ondrop = e => {
-      e.preventDefault();
-      const dropTarget = e.target.closest(".timer");
-      if(!dropTarget) return;
-
-      const targetId = dropTarget.dataset.timerId;
-      if(!draggedId || !targetId || draggedId === targetId) return;
-
-      // reordenar timersOrder en memoria
-      const fromIndex = timersOrder.indexOf(draggedId);
-      const toIndex = timersOrder.indexOf(targetId);
-
-      // Si timersOrder no contiene alguno (casos raros), reconstruir primero
-      if(fromIndex === -1 || toIndex === -1){
-        timersOrder = Array.from(container.querySelectorAll(".timer")).map(d => d.dataset.timerId);
-      } else {
-        timersOrder.splice(fromIndex, 1);
-        const insertIndex = timersOrder.indexOf(targetId);
-        timersOrder.splice(insertIndex, 0, draggedId);
-      }
-
-      // persistir
-      saveTimersOrder().catch(e => console.error(e));
-
-      // re-render UI con nuevo orden
-      renderTimers();
-      draggedId = null;
-    };
-  });
+// utilidad mínima para escapar HTML en nombres/strings
+function escapeHtml(unsafe) {
+  if(!unsafe && unsafe !== 0) return "";
+  return String(unsafe)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 /* ===========================
@@ -1114,11 +1075,13 @@ function enableDragAndDrop(){
 
 </script>
 
+ 
 <!-- Conexión al archivo externo de estadísticas -->
 <script type="module" src="estadisticas.js"></script>
 
 </body>
 </html>
+
 
 
 
