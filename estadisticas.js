@@ -112,22 +112,21 @@ function computeMetrics(reg) {
   });
 
   Object.values(perDia).forEach(d => {
-    // ⭐ NUEVO: usar todos los timers del día, no solo los iniciados
-const seen = new Set(Object.keys(timerTargets));
- if (s.objetivoMin && !s.timerId) {} });
-    let objMin = 0;
-    seen.forEach(tid => {
-      if (timerTargets[tid] != null) objMin += timerTargets[tid];
-      else {
-        const f = d.sessions.find(x => x.timerId === tid && x.objetivoMin);
-        if (f && f.objetivoMin) objMin += Number(f.objetivoMin);
-      }
-    });
-    d.objetivosMinTotal = objMin;
-    d.objetivoSecTotal = Math.round(objMin * 60);
-    d.tiempoRestanteSec = Math.max(0, d.objetivoSecTotal - d.totalSec);
-    d.exitoso = (d.objetivoSecTotal > 0) ? (d.totalSec >= d.objetivoSecTotal) : false;
+
+  // ⭐ Aquí debe estar la línea correcta
+  const seen = new Set(Object.keys(timerTargets));
+
+  let objMin = 0;
+  seen.forEach(tid => {
+    if (timerTargets[tid] != null) objMin += timerTargets[tid];
   });
+
+  d.objetivosMinTotal = objMin;
+  d.objetivoSecTotal = Math.round(objMin * 60);
+  d.tiempoRestanteSec = Math.max(0, d.objetivoSecTotal - d.totalSec);
+  d.exitoso = (d.objetivoSecTotal > 0) ? (d.totalSec >= d.objetivoSecTotal) : false;
+});
+
 
   // per-date aggregation (calendar)
   const perDate = {};
@@ -624,6 +623,7 @@ if (typeof window !== "undefined") window.renderStatsGeneral = window.renderStat
 
 // ❌ Línea problemática eliminada:
 // export { renderStatsGeneral };
+
 
 
 
