@@ -96,11 +96,9 @@ function buildRegistroFromTable() {
   const tbody = document.querySelector("#registroTable tbody");
   if (!tbody) return null;
   const rows = Array.from(tbody.querySelectorAll("tr"));
-  // ignorar fila de nota si existe (la que pusiste cuando no hay días)
   const eventos = [];
 
   rows.forEach(tr => {
-    // fila "nota" sin 7 celdas: ignorar
     const tds = Array.from(tr.querySelectorAll("td"));
     if (tds.length < 5) return;
 
@@ -113,8 +111,7 @@ function buildRegistroFromTable() {
     const creadoText = tds[6] ? tds[6].textContent.trim() : "";
 
     const ts = parseLocalDateString(fechaText);
-    const tsIso = ts ? ts.toISOString() : fechaText || null;
-
+    const tsIso = ts ? ts.toISOString() : null;
     const marcaSec = parseTimeStringHMS(marcaText);
 
     eventos.push({
@@ -123,13 +120,12 @@ function buildRegistroFromTable() {
       tipo,
       marcaSec,
       timestamp: tsIso,
-      objetivoMin: objetivoText ? Number(objetivoText) : (isNaN(Number(objetivoText)) ? null : Number(objetivoText)),
+      objetivoMin: (objetivoText && !isNaN(Number(objetivoText))) ? Number(objetivoText) : null,
       creado: creadoText || null,
       rawRowText: [diaText, nombre, tipo, marcaText, fechaText, objetivoText, creadoText].join(" | ")
     });
   });
 
-  // ordenar por timestamp asc (si timestamp nulo, dejar al final)
   eventos.sort((a,b) => {
     if (!a.timestamp && !b.timestamp) return 0;
     if (!a.timestamp) return 1;
@@ -137,13 +133,12 @@ function buildRegistroFromTable() {
     return new Date(a.timestamp) - new Date(b.timestamp);
   });
 
-  // Detectar días: construir array de dias a partir de eventos tipo dia_iniciado / dia_finalizado
+  // Detectar días
   const inicios = eventos.filter(e => e.tipo === "dia_iniciado");
   const finales = eventos.filter(e => e.tipo === "dia_finalizado");
-
   const dias = [];
   const usedFinalIdx = new Set();
-  inicios.forEach((ini, idx) => {
+  inicios.forEach((ini) => {
     const iniTs = ini.timestamp ? new Date(ini.timestamp) : null;
     let matchedFinal = null;
     for (let j = 0; j < finales.length; j++) {
@@ -161,7 +156,7 @@ function buildRegistroFromTable() {
     });
   });
 
-  // Construir timerTargets por nombre (viene de timer_creado filas)
+  // timersMeta por nombre (tomado de timer_creado). NOTE: si quieres identificar por createdAt, se adapta.
   const timersMeta = {};
   eventos.forEach(ev => {
     if (ev.tipo === "timer_creado") {
@@ -171,195 +166,127 @@ function buildRegistroFromTable() {
     }
   });
 
-  // Crear sesiones: para cada día, procesar eventos que ocurren dentro de ese día
-  const sessions = [];
+  // retornamos tanto 'reg' como 'eventos' para que computeMetrics pueda aplicar la regla de "última marca por cronómetro"
+  return {
+    dias,
+    sessions: [], // se sigue manteniendo por compatibilidad (si quieres usar sesiones las recreamos)
+    timersMeta,
+    eventos
+  };
+}
 
-  function assignDiaForTs(tsIso) {
-    if (!tsIso) return null;
-    const t = new Date(tsIso);
-    for (const d of dias) {
-      const s = d.inicio ? new Date(d.inicio) : null;
-      const e = d.fin ? new Date(d.fin) : null;
-      if (s && e) { if (t >= s && t <= e) return d.dia; }
-      else if (s && !e) { if (t >= s) return d.dia; }
-    }
-    return null;
-  }
 
-  // Para emparejar inicios/pausas por nombre dentro de cada día
+/* ---------- METRICS (basado en tu anterior) ---------- */
+function computeMetrics(reg) {
+  // reg must contain: dias[], sessions[] (opcional), timersMeta{}, eventos[]
+  const { dias, sessions, timersMeta, eventos } = reg;
+
+  // Rápidos baselines
+  // NOTA: totalAccumulatedSec será recalculado con la nueva regla: suma de últimas marcas por timer en cada día
+  const perDia = {};
   dias.forEach(d => {
+    perDia[d.dia] = { dia: d.dia, inicio: d.inicio, fin: d.fin || null, dateKeys: d.dateKeys || [], totalSec: 0, sessions: [], objetivosMinTotal: 0, objetivoSecTotal: 0, tiempoRestanteSec: 0, exitoso: false };
+  });
+  if (!perDia["sin_dia"]) perDia["sin_dia"] = { dia: null, totalSec: 0, sessions: [], objetivosMinTotal: 0, dateKeys: [], objetivoSecTotal: 0, tiempoRestanteSec: 0, exitoso: false };
+
+  // Preindexar eventos por día y por nombre
+  // Para cada día, obtener eventos cuyo timestamp esté dentro del intervalo [inicio..fin] (o >= inicio si no hay fin)
+  function eventsForDay(d) {
     const sTs = d.inicio ? new Date(d.inicio).getTime() : null;
     const eTs = d.fin ? new Date(d.fin).getTime() : null;
-    const slice = eventos.filter(ev => {
+    return eventos.filter(ev => {
       if (!ev.timestamp) return false;
       const t = new Date(ev.timestamp).getTime();
       if (sTs && eTs) return t >= sTs && t <= eTs;
       if (sTs && !eTs) return t >= sTs;
       return false;
     });
+  }
 
-    // por nombre, recorrer y emparejar inicios->pausa
-    const openByName = {}; // name -> last iniciado event
-    slice.forEach(ev => {
-      const name = ev.nombre || "sin_nombre";
-      if (ev.tipo === "timer_iniciado") {
-        openByName[name] = ev;
-      } else if (["timer_pausado","timer_reseteado","timer_completado","timer_borrado"].includes(ev.tipo)) {
-        const startEv = openByName[name];
-        if (startEv && startEv.timestamp) {
-          const startTs = startEv.timestamp;
-          const endTs = ev.timestamp || d.fin || null;
-          const durationSec = (startTs && endTs) ? Math.max(0, Math.round((new Date(endTs) - new Date(startTs)) / 1000)) : 0;
-          sessions.push({
-            timerId: name,
-            name,
-            startTs,
-            endTs,
-            durationSec,
-            dia: d.dia,
-            dateKey: isoToDateKey(startTs),
-            objetivoMin: (timersMeta[name] && timersMeta[name].target) ? Number(timersMeta[name].target) : (startEv.objetivoMin || null),
-            closingType: ev.tipo
-          });
-          delete openByName[name];
-        } else {
-          // No había inicio registrado en slice -> ignoramos (o podríamos crear sesión 0)
+  // Para cada día:
+  dias.forEach(d => {
+    const evs = eventsForDay(d);
+    // identificar todos los cronómetros "pertenecientes" al día:
+    // definimos "perteneciente" como: existe un evento timer_creado con ese nombre dentro de evs
+    const createdInDay = evs.filter(x => x.tipo === "timer_creado");
+    const timersInDay = new Set(createdInDay.map(x => x.nombre));
+
+    // Si no hay none creado, aún podríamos tener timers iniciados ese día con creación previa:
+    // incluir también nombres que aparecen en eventos del día aunque no se hayan creado en el día
+    evs.forEach(x => { if (x.nombre) timersInDay.add(x.nombre); });
+
+    // Para cada timer en timersInDay, buscamos la ÚLTIMA marca dentro del día (última fila con marcaSec no nula)
+    let dayTotalSec = 0;
+    timersInDay.forEach(timerName => {
+      // filtrar eventos del día para ese timer
+      const evTimer = evs.filter(x => x.nombre === timerName);
+      // ordenar por timestamp asc y tomar la última que tenga marcaSec != null
+      evTimer.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+      let lastMarca = null;
+      for (let i = evTimer.length - 1; i >= 0; i--) {
+        if (evTimer[i].marcaSec !== null && evTimer[i].marcaSec !== undefined) { lastMarca = evTimer[i].marcaSec; break; }
+      }
+      if (lastMarca === null) lastMarca = 0; // si nunca se inició / no hay marca -> 0
+      dayTotalSec += Number(lastMarca || 0);
+    });
+
+    perDia[d.dia].totalSec = dayTotalSec;
+
+    // objetivos: sumar objetivos de TODOS los cronómetros que existen en el día
+    // definimos "existen en el día" como aquellos con evento timer_creado dentro del día (si no hay creados, intentar buscar createdAt global en timersMeta)
+    let objetivoMinSum = 0;
+    // tomar createdInDay target
+    createdInDay.forEach(c => { if (c.objetivoMin) objetivoMinSum += Number(c.objetivoMin); });
+    // si createdInDay vacío, intentar sumar objetivos de timersMeta que tengan createdAt dentro del día
+    if (createdInDay.length === 0) {
+      Object.entries(timersMeta || {}).forEach(([k,meta]) => {
+        if (!meta.createdAt) return;
+        const ca = new Date(meta.createdAt).getTime();
+        const sTs = d.inicio ? new Date(d.inicio).getTime() : null;
+        const eTs = d.fin ? new Date(d.fin).getTime() : null;
+        if (sTs && eTs) {
+          if (ca >= sTs && ca <= eTs) { if (meta.target) objetivoMinSum += Number(meta.target); }
+        } else if (sTs && !eTs) {
+          if (ca >= sTs) { if (meta.target) objetivoMinSum += Number(meta.target); }
         }
-      }
-    });
-
-    // Cerrar inicios abiertos con fin del día si existe
-    Object.keys(openByName).forEach(name => {
-      const startEv = openByName[name];
-      const startTs = startEv.timestamp;
-      const endTs = d.fin || null;
-      if (startTs && endTs) {
-        const durationSec = Math.max(0, Math.round((new Date(endTs) - new Date(startTs)) / 1000));
-        sessions.push({
-          timerId: name,
-          name,
-          startTs,
-          endTs,
-          durationSec,
-          dia: d.dia,
-          dateKey: isoToDateKey(startTs),
-          objetivoMin: (timersMeta[name] && timersMeta[name].target) ? Number(timersMeta[name].target) : (startEv.objetivoMin || null),
-          closingType: "auto_cierre_por_day_end"
-        });
-      }
-    });
-  });
-
-  // También manejar eventos que están fuera de cualquier día ("sin día") — opcional: no las convertimos en sessions salvo si hay inicio+pausa fuera de días
-  // Buscamos inicios que no estén en dias y su correspondiente pausa fuera de dias
-  const outside = eventos.filter(ev => assignDiaForTs(ev.timestamp) === null);
-  const openOutside = {};
-  outside.forEach(ev => {
-    const name = ev.nombre || "sin_nombre";
-    if (ev.tipo === "timer_iniciado") openOutside[name] = ev;
-    else if (["timer_pausado","timer_reseteado","timer_completado","timer_borrado"].includes(ev.tipo)) {
-      const st = openOutside[name];
-      if (st && st.timestamp) {
-        const startTs = st.timestamp;
-        const endTs = ev.timestamp;
-        const durationSec = Math.max(0, Math.round((new Date(endTs) - new Date(startTs)) / 1000));
-        sessions.push({
-          timerId: name,
-          name,
-          startTs,
-          endTs,
-          durationSec,
-          dia: null,
-          dateKey: isoToDateKey(startTs),
-          objetivoMin: (timersMeta[name] && timersMeta[name].target) ? Number(timersMeta[name].target) : (st.objetivoMin || null),
-          closingType: ev.tipo
-        });
-        delete openOutside[name];
-      }
+      });
     }
+
+    perDia[d.dia].objetivosMinTotal = objetivoMinSum;
+    perDia[d.dia].objetivoSecTotal = Math.round(objetivoMinSum * 60);
+    perDia[d.dia].tiempoRestanteSec = Math.max(0, perDia[d.dia].objetivoSecTotal - perDia[d.dia].totalSec);
+    perDia[d.dia].exitoso = perDia[d.dia].objetivoSecTotal > 0 ? (perDia[d.dia].totalSec >= perDia[d.dia].objetivoSecTotal) : false;
   });
 
-  // Exponer estructura
-  const registro = {
-    dias,
-    sessions,
-    timersMeta
-  };
-  return registro;
-}
+  // perDate (calendar): sumar totalSec de todas las marcas de sesiones o usar perDia.dateKeys mapping
+  // Construiremos perDate basándonos en sesiones (si hay) o bien a partir de perDia dateKeys
+  const perDate = {};
+  // recorrer cada día y mapear sus dateKeys a totalSec
+  dias.forEach(d => {
+    const keys = d.dateKeys && d.dateKeys.length ? d.dateKeys : [ isoToDateKey(d.inicio) ];
+    keys.forEach(k => {
+      if (!perDate[k]) perDate[k] = { dateKey: k, totalSec: 0, sessions: [] };
+      perDate[k].totalSec += perDia[d.dia].totalSec;
+    });
+  });
 
-/* ---------- METRICS (basado en tu anterior) ---------- */
-function computeMetrics(reg) {
-  const { dias, sessions, timersMeta } = reg;
+  // Objetivos por fecha (sumar objetivos de los días que mapearon a esa fecha)
+  const perDateObjetivos = {};
+  Object.keys(perDate).forEach(dk => perDateObjetivos[dk] = 0);
+  dias.forEach(d => {
+    const keys = d.dateKeys && d.dateKeys.length ? d.dateKeys : [ isoToDateKey(d.inicio) ];
+    keys.forEach(k => {
+      perDateObjetivos[k] = (perDateObjetivos[k] || 0) + (perDia[d.dia].objetivosMinTotal || 0);
+    });
+  });
 
-  const totalAccumulatedSec = sessions.reduce((acc, s) => acc + (Number(s.durationSec) || 0), 0);
+  // totales globales
+  const totalAccumulatedSec = Object.values(perDia).reduce((s, p) => s + (Number(p.totalSec) || 0), 0);
   const numDias = dias.length;
-  const uniqueDates = new Set(sessions.map(s => s.dateKey).filter(Boolean));
+  const uniqueDates = new Set(Object.keys(perDate).filter(Boolean));
   const numFechas = uniqueDates.size;
 
-  // perDia
-  const perDia = {};
-  dias.forEach(d => perDia[d.dia] = { dia: d.dia, inicio: d.inicio, fin: d.fin || null, dateKeys: d.dateKeys || [], totalSec:0, sessions:[], objetivosMinTotal:0, objetivoSecTotal:0, tiempoRestanteSec:0, exitoso:false });
-
-  if (!perDia["sin_dia"]) perDia["sin_dia"] = { dia: null, totalSec: 0, sessions: [], objetivosMinTotal: 0, dateKeys: [], objetivoSecTotal: 0, tiempoRestanteSec: 0, exitoso: false };
-
-  sessions.forEach(s => {
-    const k = (s.dia === null || s.dia === undefined) ? "sin_dia" : s.dia;
-    if (!perDia[k]) perDia[k] = { dia: k, totalSec: 0, sessions: [], objetivosMinTotal: 0, dateKeys: [], objetivoSecTotal: 0, tiempoRestanteSec: 0, exitoso: false };
-    perDia[k].sessions.push(s);
-    perDia[k].totalSec += Number(s.durationSec || 0);
-    if (s.dateKey && !perDia[k].dateKeys.includes(s.dateKey)) perDia[k].dateKeys.push(s.dateKey);
-  });
-
-  // calcular objetivos por día sumando targets de timers usados en ese día
-  const timerTargets = {};
-  Object.entries(timersMeta || {}).forEach(([id, meta]) => {
-    if (meta && meta.target != null) timerTargets[id] = Number(meta.target);
-  });
-
-  Object.values(perDia).forEach(d => {
-    const seen = new Set();
-    d.sessions.forEach(s => { if (s.timerId) seen.add(s.timerId); });
-    let objMin = 0;
-    seen.forEach(tid => {
-      if (timerTargets[tid] != null) objMin += timerTargets[tid];
-      else {
-        const f = d.sessions.find(x => x.timerId === tid && x.objetivoMin);
-        if (f && f.objetivoMin) objMin += Number(f.objetivoMin);
-      }
-    });
-    d.objetivosMinTotal = objMin;
-    d.objetivoSecTotal = Math.round(objMin * 60);
-    d.tiempoRestanteSec = Math.max(0, d.objetivoSecTotal - d.totalSec);
-    d.exitoso = (d.objetivoSecTotal > 0) ? (d.totalSec >= d.objetivoSecTotal) : false;
-  });
-
-  // per-date (calendar)
-  const perDate = {};
-  sessions.forEach(s => {
-    const k = s.dateKey || isoToDateKey(s.startTs);
-    if (!perDate[k]) perDate[k] = { dateKey: k, totalSec:0, sessions:[] };
-    perDate[k].totalSec += Number(s.durationSec || 0);
-    perDate[k].sessions.push(s);
-  });
-
-  // perDate objetivos
-  const perDateObjetivos = {};
-  Object.keys(perDate).forEach(dk => {
-    const timersSeen = new Set();
-    perDate[dk].sessions.forEach(s => { if (s.timerId) timersSeen.add(s.timerId); });
-    let objMin = 0;
-    timersSeen.forEach(tid => {
-      if (timerTargets[tid] != null) objMin += timerTargets[tid];
-      else {
-        const f = perDate[dk].sessions.find(x => x.timerId === tid && x.objetivoMin);
-        if (f && f.objetivoMin) objMin += Number(f.objetivoMin);
-      }
-    });
-    perDateObjetivos[dk] = objMin;
-  });
-
-  // racha máxima
+  // racha y dias exitosos (por fecha calendario)
   const dateKeysSorted = Object.keys(perDate).sort();
   let maxRacha = 0, curRacha = 0;
   dateKeysSorted.forEach(k => {
@@ -370,8 +297,9 @@ function computeMetrics(reg) {
 
   const diasExitososCount = Object.values(perDia).filter(d => (d.dia !== null) && d.objetivoSecTotal && d.totalSec >= d.objetivoSecTotal).length;
 
-  const sessionsCount = sessions.length;
-  const mediaPorSesion = sessionsCount ? Math.round(totalAccumulatedSec / sessionsCount) : 0;
+  // media por sesión (si quieres cambiar la definición, indícamelo)
+  const allSessionsCount = 0;
+  const mediaPorSesion = 0;
 
   return {
     totalAccumulatedSec,
@@ -383,10 +311,11 @@ function computeMetrics(reg) {
     mediaPorSesion,
     diasExitososCount,
     maxRacha,
-    sessions,
-    timerTargets
+    sessions, // preservamos
+    timerTargets: timersMeta || {}
   };
 }
+
 
 /* ---------- UI builder (basado en tu UI existente) ---------- */
 function buildBaseUI(root) {
@@ -765,6 +694,7 @@ export async function renderStatsGeneral() {
     renderCharts(metrics, registro, sessionsFiltered);
   }
 }
+
 
 
 
