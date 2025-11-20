@@ -369,11 +369,12 @@ async function save() {
   if(!dbRef) return;
   try {
     await set(dbRef,{
-      timers,
-      dayStarted,
-      dayEnded,
-      updatedAt:new Date().toISOString()
-    });
+  timers: timersToSave,
+  dayStarted,
+  dayEnded,
+  updatedAt: new Date().toISOString()
+});
+
   } catch(err) {
     console.error("Error guardando diaActual:", err);
   }
@@ -1088,6 +1089,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
