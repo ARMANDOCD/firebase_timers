@@ -658,27 +658,6 @@ function processEventsToRegistro(eventosArr){
   });
 
 
-//bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-   // calcular duración REAL usando timestamps
-if (f.tipo === "timer_pausado") {
-    // buscar el evento de inicio más cercano hacia atrás
-    const startEvent = eventos
-        .filter(e => 
-            e.nombre === f.nombre &&
-            e.tipo === "timer_iniciado" &&
-            e.timestamp <= f.timestamp
-        )
-        .sort((a,b) => b.timestamp - a.timestamp)[0];
-
-    if (startEvent) {
-        const duracionSeg = Math.floor((f.timestamp - startEvent.timestamp) / 1000);
-        f.duracion = duracionSeg;
-    } else {
-        f.duracion = null; // no se encontró inicio
-    }
-}
-
-
    
   // helper to determine which day a timestamp belongs to
   function findDiaForTs(ts){
@@ -1083,6 +1062,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
