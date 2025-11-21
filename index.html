@@ -1376,6 +1376,8 @@ window.addEventListener("registroProcesadoReady", ()=> initStats());
 <td>${f.cumplido ? "✔" : "✖"}</td>
       `;
       tbody.appendChild(tr);
+
+       actualizarFiltros();
     });
 
     // Si no hay días detectados, mostrar nota
@@ -1387,6 +1389,43 @@ window.addEventListener("registroProcesadoReady", ()=> initStats());
     }
 
   }); // onValue
+
+function actualizarFiltros() {
+    const selDia = document.getElementById("filterDia");
+    const selFecha = document.getElementById("filterFecha");
+    const selAct = document.getElementById("filterActividad");
+
+    const dias = new Set();
+    const fechas = new Set();
+    const actividades = new Set();
+
+    filas.forEach(f => {
+        if (f.dia) dias.add(f.dia);
+        if (f.timestamp) fechas.add(f.timestamp.slice(0, 10));
+        if (f.nombre) actividades.add(f.nombre);
+    });
+
+    // limpiar
+    selDia.innerHTML = `<option value="">Todos los días</option>`;
+    selFecha.innerHTML = `<option value="">Todas las fechas</option>`;
+    selAct.innerHTML = `<option value="">Todas las actividades</option>`;
+
+    // llenar
+    dias.forEach(d => {
+        selDia.innerHTML += `<option value="${d}">Día ${d}</option>`;
+    });
+
+    fechas.forEach(f => {
+        selFecha.innerHTML += `<option value="${f}">${f}</option>`;
+    });
+
+    actividades.forEach(a => {
+        selAct.innerHTML += `<option value="${a}">${a}</option>`;
+    });
+}
+
+
+  
 } // renderRegistroEventos
 
 // utilidad mínima para escapar HTML en nombres/strings
@@ -1413,6 +1452,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
