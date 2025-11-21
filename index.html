@@ -827,7 +827,7 @@ if (!matchedSession) {
 
     const dur = matchedSession ? matchedSession.durationSec : null;
     const cumplido = (()=> {
-      const objMin = objetivoFromName;
+      const objMin = objetivo;
       if(objMin===null || objMin===undefined) return false;
       const targetSec = Number(objMin)*60;
       if(dur!==null && dur!==undefined) return dur >= targetSec;
@@ -843,7 +843,7 @@ if (!matchedSession) {
       marca,
       marcaStr,
       timestamp: ts,
-      objetivo: objetivoFromName,
+      objetivo: objetivo,
       creado: ev.createdAt || ev.timestamp || "",
       cumplido
     };
@@ -1090,6 +1090,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
