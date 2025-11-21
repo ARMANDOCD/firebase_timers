@@ -773,7 +773,26 @@ function buildAndRenderTable(registro, filters){
     const ts = ev.timestamp || null;
     const dia = findDiaForEvent(ts, registro.dias);
     const name = ev.name || (ev.timerId && registro.metaByTimerId && registro.metaByTimerId[ev.timerId] && registro.metaByTimerId[ev.timerId].name) || ev.timerId || "";
-    const objetivoFromName = registro.objetivoPorNombre && registro.objetivoPorNombre[name] !== undefined ? registro.objetivoPorNombre[name] : (ev.target ?? (registro.metaByTimerId && registro.metaByTimerId[ev.timerId]?registro.metaByTimerId[ev.timerId].targetMin:null));
+    let objetivo = null;
+
+// 1. por timerId (más preciso)
+if (ev.timerId && registro.metaByTimerId[ev.timerId]) {
+    const meta = registro.metaByTimerId[ev.timerId];
+    if (meta.targetMin !== undefined && meta.targetMin !== null) {
+        objetivo = Number(meta.targetMin);
+    }
+}
+
+// 2. por nombre (unifica actividades repetidas)
+if (objetivo === null && name && registro.objetivoPorNombre[name] !== undefined) {
+    objetivo = Number(registro.objetivoPorNombre[name]);
+}
+
+// 3. fallback (casi nunca)
+if (objetivo === null && ev.target !== undefined) {
+    objetivo = Number(ev.target);
+}
+
     // compute marcaStr
     const marca = ev.endElapsed ?? ev.elapsed ?? null;
     const marcaStr = marca !== null ? formatTimeFromSeconds(Number(marca)) : "";
@@ -856,7 +875,7 @@ if(f.nombre){
       <td>${escapeHtml(f.tipo||"")}</td>
       <td>${f.marcaStr || ""}</td>
       <td>${f.timestamp ? formatLocal(f.timestamp) : ""}</td>
-      <td>${f.objetivo===null||f.objetivo===undefined? "": f.objetivo}</td>
+      <td>${objetivo ?? ""}</td>
       <td>${f.creado? formatLocal(f.creado): ""}</td>
       <td>${f.cumplido? "✔":"✖"}</td>`;
     tbody.appendChild(tr);
@@ -1071,6 +1090,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
