@@ -785,25 +785,16 @@ function buildAndRenderTable(registro, filters){
     let objetivo = null;
 
 
-    // --- PRIMERO: por timerId (100% exacto)
-    if (ev.timerId && registro.metaByTimerId[ev.timerId]) {
-        const meta = registro.metaByTimerId[ev.timerId];
-        if (meta.targetMin !== undefined && meta.targetMin !== null) {
-            objetivo = Number(meta.targetMin);
-        }
-    }
+// tratamos de obtenerlo directamente del meta (si existe)
+if (ev.timerId && registro.metaByTimerId[ev.timerId] && registro.metaByTimerId[ev.timerId].targetMin != null) {
+    objetivo = Number(registro.metaByTimerId[ev.timerId].targetMin);
+}
 
-    // --- SEGUNDO: por nombre (unifica actividades repetidas)
-    if (objetivo === null && name) {
-        if (registro.objetivoPorNombre[name] !== undefined) {
-            objetivo = Number(registro.objetivoPorNombre[name]);
-        }
-    }
+// también probamos con el nombre (aunque luego igual vamos a corregirlo globalmente)
+if (objetivo === null && name && registro.objetivoPorNombre[name] !== undefined) {
+    objetivo = Number(registro.objetivoPorNombre[name]);
+}
 
-    // --- TERCERO: fallback si el evento tiene target directo
-    if (objetivo === null && ev.target !== undefined && ev.target !== null) {
-        objetivo = Number(ev.target);
-    }
 
     // compute marcaStr
     const marca = ev.endElapsed ?? ev.elapsed ?? null;
@@ -864,6 +855,27 @@ function buildAndRenderTable(registro, filters){
     };
 });
 
+//ccccccccccccccccccccccccccccccccccccccccccccc
+   // ------------------------------------------------------
+// 🔥 ETAPA DE CORRECCIÓN GLOBAL DE OBJETIVOS POR NOMBRE
+// ------------------------------------------------------
+const objetivoPorNombrePost = {};
+
+// Primero: recolectamos objetivos válidos de cualquier fila
+rows.forEach(r => {
+    if (r.nombre && r.objetivo != null) {
+        objetivoPorNombrePost[r.nombre] = r.objetivo;
+    }
+});
+
+// Segundo: rellenamos los vacíos copiando los objetivos
+rows.forEach(r => {
+    if (r.nombre && (r.objetivo == null || r.objetivo === "")) {
+        if (objetivoPorNombrePost[r.nombre] !== undefined) {
+            r.objetivo = objetivoPorNombrePost[r.nombre];
+        }
+    }
+});
 
   // apply filters to rows (filters object)
   let filtered = rows.slice();
@@ -1106,6 +1118,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
