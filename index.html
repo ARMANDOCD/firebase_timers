@@ -348,6 +348,24 @@ let dayEnded = null;
 let currentUid = null;
 const loggedCompletions = new Set();
 
+//aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+   // Mapa global para asignar un color persistente por actividad
+const activityColors = {};
+function getActivityColor(name){
+  if(!activityColors[name]){
+    // Generar color pastel consistente
+    let hash = 0;
+    for (let i = 0; i < name.length; i++){
+      hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const hue = Math.abs(hash) % 360;
+    activityColors[name] = `hsl(${hue}, 70%, 85%)`;
+  }
+  return activityColors[name];
+}
+
+
+   
 document.getElementById("loginEmailBtn").onclick = async () => {
   const email = document.getElementById("emailInput").value;
   const pass = document.getElementById("passwordInput").value;
@@ -816,6 +834,10 @@ function buildAndRenderTable(registro, filters){
   tbody.innerHTML = "";
   filtered.forEach(f=>{
     const tr = document.createElement("tr");
+if(r.nombre){
+  tr.style.backgroundColor = getActivityColor(r.nombre);
+}
+
     if(f.dia === null) tr.classList.add("no-day");
     tr.innerHTML = `<td>${f.dia===null? "<i>sin día asignado</i>": f.dia}</td>
       <td>${escapeHtml(f.nombre||"")}</td>
@@ -1038,5 +1060,6 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
