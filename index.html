@@ -789,7 +789,7 @@ function buildAndRenderTable(registro, filters){
     const marcaStr = marca !== null ? formatTimeFromSeconds(Number(marca)) : "";
     // try attach session data when event is the closing event (match by timestamp == session.startTs or event.tipo is a closing and timestamp equals session end)
     let matchedSession = null;
-    let matchedSession = null;
+
 
 // 1. intento exacto por startTs
 if (sessionByStart[ev.timestamp]) {
@@ -1083,6 +1083,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
