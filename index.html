@@ -457,8 +457,6 @@ function formatLocal(ts){
 /* -------- NAV SECTIONS -------- */
 window.openSection = function(sectionId){
   document.getElementById("mainPage").classList.add("hidden");
-  document.getElementById("statsGeneral").classList.add("hidden");
-  document.getElementById("statsPersonal").classList.add("hidden");
   document.getElementById("registroEventos").classList.add("hidden");
 
   document.getElementById(sectionId).classList.remove("hidden");
@@ -1378,23 +1376,7 @@ function escapeHtml(unsafe) {
     .replaceAll('"',"&quot;")
     .replaceAll("'", "&#039;");
 }
-document.getElementById("btnEstadisticas").onclick = async () => {
 
-    // Si no se construyó el registro todavía, lo generamos
-    if (!window.registroProcesado || filas.length === 0) {
-        await renderRegistroEventos();
-    }
-
-    // Si aún así sigue vacío, avisar
-    if (filas.length === 0) {
-        alert("No hay datos de registro todavía.");
-        return;
-    }
-
-    localStorage.setItem("registroProcesado", JSON.stringify(window.registroProcesado));
-    localStorage.setItem("registroFilas", JSON.stringify(filas));
-    window.open("estadisticas.html", "_blank");
-};
 
 /* ===========================
    ====== FIN registro UI =====
@@ -1408,6 +1390,7 @@ document.getElementById("btnEstadisticas").onclick = async () => {
 
 </body>
 </html>
+
 
 
 
