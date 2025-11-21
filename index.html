@@ -951,7 +951,7 @@ function refrescarEstadisticas(){
   document.getElementById("statsStatus").innerText = `Mostrando ${lista.length} sesiones`;
 
   const total = lista.reduce((a,b)=> a + (b.durationSec||0), 0);
-  document.getElementById("statsResumen").innerHTML = `<p><b>Tiempo total:</b> ${formatTimeFromSeconds(total)}</p><p><b>Días afectados:</b> ${[...new Set(lista.map(s=>s.dia).filter(x=>x!=null))].length}</p>`;
+  document.getElementById("statsResumen").innerHTML = `<p><b>Tiempo total:</b> ${formatTimeFromSeconds(total)}</p><p><b>Días en marcha:</b> ${[...new Set(lista.map(s=>s.dia).filter(x=>x!=null))].length}</p>`;
 
   // actividad chart
   const act = {};
@@ -1060,6 +1060,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
