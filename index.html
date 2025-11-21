@@ -789,12 +789,33 @@ function buildAndRenderTable(registro, filters){
     const marcaStr = marca !== null ? formatTimeFromSeconds(Number(marca)) : "";
     // try attach session data when event is the closing event (match by timestamp == session.startTs or event.tipo is a closing and timestamp equals session end)
     let matchedSession = null;
-    // find by startTs equals ev.timestamp
-    if(sessionByStart[ev.timestamp]) matchedSession = sessionByStart[ev.timestamp];
-    // else try to find session where endTs == ev.timestamp
-    if(!matchedSession){
-      matchedSession = registro.sessions.find(s=> s.endTs && ev.timestamp && s.endTs === ev.timestamp);
+    let matchedSession = null;
+
+// 1. intento exacto por startTs
+if (sessionByStart[ev.timestamp]) {
+    matchedSession = sessionByStart[ev.timestamp];
+}
+
+// 2. intento exacto por endTs
+if (!matchedSession) {
+    matchedSession = registro.sessions.find(
+        s => s.endTs && ev.timestamp && s.endTs === ev.timestamp
+    );
+}
+
+// 3. intento por rango (la solución REAL)
+if (!matchedSession) {
+    const evTime = ev.timestamp ? Date.parse(ev.timestamp) : null;
+    if (evTime) {
+        matchedSession = registro.sessions.find(s => {
+            if (!s.startTs || !s.endTs) return false;
+            const st = Date.parse(s.startTs);
+            const en = Date.parse(s.endTs);
+            return evTime >= st && evTime <= en && s.closingType === ev.tipo;
+        });
     }
+}
+
     const dur = matchedSession ? matchedSession.durationSec : null;
     const cumplido = (()=> {
       const objMin = objetivoFromName;
@@ -1062,6 +1083,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
