@@ -622,9 +622,11 @@ function normalizeTimestamp(ts){
 }
 
 // process events -> sessions and days
+// process events -> sessions and days
 function processEventsToRegistro(eventosArr){
   // sanitize, map to objects and normalize timestamps
   const evs = (eventosArr||[]).filter(e=> e && typeof e === 'object').map(e => ({...e, timestamp: normalizeTimestamp(e.timestamp)}));
+
   // build name->targetMin mapping from timer_creado events (user requested: match by name)
   const objetivoPorNombre = {};
   const metaByTimerId = {};
@@ -640,7 +642,7 @@ function processEventsToRegistro(eventosArr){
     }
   });
 
-  // extract day intervals
+  // extract day intervals (pair dia_iniciado / dia_finalizado)
   const dias = [];
   const inicios = evs.filter(e=>e.tipo==='dia_iniciado').sort((a,b)=> Date.parse(a.timestamp||0) - Date.parse(b.timestamp||0));
   const finales = evs.filter(e=>e.tipo==='dia_finalizado').sort((a,b)=> Date.parse(a.timestamp||0) - Date.parse(b.timestamp||0));
@@ -657,8 +659,6 @@ function processEventsToRegistro(eventosArr){
     dias.push({ dia: dias.length+1, inicio: ini.timestamp, fin: matched? matched.timestamp:null, rawInicio: ini, rawFin: matched||null });
   });
 
-
-   
   // helper to determine which day a timestamp belongs to
   function findDiaForTs(ts){
     if(!ts) return null;
@@ -675,79 +675,89 @@ function processEventsToRegistro(eventosArr){
     return null;
   }
 
-  // build sessions pairing timer_iniciado -> closest closing event
-  // Construir sesiones usando marcas (elapsed)
-const sessions = [];
-const eventosPorTimer = {};
+  // --- Build sessions using marks (marca_i - marca_i-1) grouped by timerId ---
+  const sessions = [];
+  const eventosPorTimer = {};
 
-// agrupar por timerId
-evs.forEach(ev => {
-  const tid = ev.timerId;
-  if(!tid) return;
-  if(!eventosPorTimer[tid]) eventosPorTimer[tid] = [];
-  eventosPorTimer[tid].push(ev);
-});
+  // group events by timerId (ignore events without timerId except we still keep rawEvents)
+  evs.forEach(ev => {
+    const tid = ev.timerId;
+    if(!tid) return;
+    if(!eventosPorTimer[tid]) eventosPorTimer[tid] = [];
+    eventosPorTimer[tid].push(ev);
+  });
 
-// procesar cada timer
-Object.keys(eventosPorTimer).forEach(tid => {
-  const lista = eventosPorTimer[tid];
+  // process each timer's list
+  Object.keys(eventosPorTimer).forEach(tid => {
+    const lista = eventosPorTimer[tid];
 
-  // ordenar por timestamp
-  lista.sort((a,b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+    // order by timestamp asc (robusto)
+    lista.sort((a,b) => {
+      const ta = a.timestamp ? Date.parse(a.timestamp) : 0;
+      const tb = b.timestamp ? Date.parse(b.timestamp) : 0;
+      return ta - tb;
+    });
 
-  for(let i=1; i<lista.length; i++){
-    const prev = lista[i-1];
-    const curr = lista[i];
+    // walk consecutive pairs and compute duration = marca(curr) - marca(prev)
+    for(let i=1; i<lista.length; i++){
+      const prev = lista[i-1];
+      const curr = lista[i];
 
-    // solo calcular duración si marcas existen
-    const p = prev.endElapsed ?? prev.startElapsed ?? prev.elapsed;
-    const c = curr.endElapsed ?? curr.startElapsed ?? curr.elapsed;
+      // extract marks preferring endElapsed, then startElapsed, then elapsed
+      const pMark = (prev.endElapsed !== undefined && prev.endElapsed !== null) ? Number(prev.endElapsed)
+                   : (prev.startElapsed !== undefined && prev.startElapsed !== null) ? Number(prev.startElapsed)
+                   : (prev.elapsed !== undefined && prev.elapsed !== null) ? Number(prev.elapsed)
+                   : null;
 
-    if(p != null && c != null){
-      let dur = Number(c) - Number(p);
-      if(dur < 0) dur = 0;
+      const cMark = (curr.endElapsed !== undefined && curr.endElapsed !== null) ? Number(curr.endElapsed)
+                   : (curr.startElapsed !== undefined && curr.startElapsed !== null) ? Number(curr.startElapsed)
+                   : (curr.elapsed !== undefined && curr.elapsed !== null) ? Number(curr.elapsed)
+                   : null;
 
-      sessions.push({
-        timerId: tid,
-        name: curr.name || prev.name || null,
-        startTs: prev.timestamp,
-        endTs: curr.timestamp,
-        durationSec: dur,
-        objetivoMin: null, // luego lo rellena tu código original
-        dia: null,         // luego lo calcula el código existente
-        dateKey: prev.timestamp ? (new Date(prev.timestamp)).toISOString().slice(0,10) : null,
-        closingType: curr.tipo
-      });
-    }
-  }
-});
+      if(pMark != null && cMark != null){
+        let dur = Math.max(0, Math.floor(cMark - pMark)); // seconds
+        // compute name (prefer explicit name fields, else metadata)
+        const name = curr.name || prev.name || (metaByTimerId[tid] && metaByTimerId[tid].name) || tid;
+        // objetivo: prefer objetivoPorNombre by name, else metaByTimerId targetMin, else null
+        let objetivoMin = null;
+        if(name && objetivoPorNombre[name] !== undefined) objetivoMin = Number(objetivoPorNombre[name]);
+        else if(metaByTimerId[tid] && metaByTimerId[tid].targetMin !== undefined && metaByTimerId[tid].targetMin !== null) objetivoMin = Number(metaByTimerId[tid].targetMin);
+        else if(prev.target !== undefined) objetivoMin = Number(prev.target);
 
+        const diaNum = findDiaForTs(prev.timestamp);
+        const dateKey = prev.timestamp ? (new Date(prev.timestamp)).toISOString().slice(0,10) : null;
 
-  // close any open map entries using day end or now
-  const nowIso = new Date().toISOString();
-  Object.keys(openMap).forEach(tid=>{
-    const startEv = openMap[tid];
-    let closed = false;
-    for(const d of dias){
-      const s = Date.parse(d.inicio || 0);
-      const e = d.fin ? Date.parse(d.fin) : null;
-      const st = startEv.timestamp ? Date.parse(startEv.timestamp) : NaN;
-      if(e && !isNaN(st) && st>=s && st<=e){
-        const fakeEnd = { timestamp: d.fin, tipo: 'auto_cierre_por_day_end' };
-        const dur = Math.max(0, Math.floor((Date.parse(d.fin)-Date.parse(startEv.timestamp))/1000));
-        sessions.push({ timerId: tid, name: startEv.name||null, startTs: startEv.timestamp, endTs: d.fin, startElapsed: startEv.startElapsed??null, endElapsed:null, durationSec: dur, dia: d.dia, dateKey:(new Date(startEv.timestamp)).toISOString().slice(0,10), objetivoMin: (metaByTimerId[tid] && metaByTimerId[tid].targetMin!==undefined)?Number(metaByTimerId[tid].targetMin):null, closingType:'auto_cierre_por_day_end' });
-        closed = true; break;
+        sessions.push({
+          timerId: tid,
+          name,
+          startTs: prev.timestamp || null,
+          endTs: curr.timestamp || null,
+          startElapsed: pMark,
+          endElapsed: cMark,
+          durationSec: dur,
+          dia: diaNum,
+          dateKey,
+          objetivoMin,
+          closingType: curr.tipo || null
+        });
       }
-    }
-    if(!closed){
-      const dur = startEv.timestamp ? Math.max(0, Math.floor((Date.parse(nowIso)-Date.parse(startEv.timestamp))/1000)) : 0;
-      sessions.push({ timerId: tid, name: startEv.name||null, startTs: startEv.timestamp, endTs: nowIso, startElapsed: startEv.startElapsed??null, endElapsed:null, durationSec: dur, dia:null, dateKey: startEv.timestamp ? (new Date(startEv.timestamp)).toISOString().slice(0,10) : null, objetivoMin: (metaByTimerId[tid] && metaByTimerId[tid].targetMin!==undefined)?Number(metaByTimerId[tid].targetMin):null, closingType:'auto_cierre_por_now' });
+      // if marks missing, skip pair (can't compute duration)
     }
   });
 
-  // prepare registro object
-  return { dias: dias.map(d=>({ dia:d.dia, inicio:d.inicio, fin:d.fin||null })), sessions, objetivoPorNombre, metaByTimerId, rawEvents: evs };
+  // Note: we intentionally DO NOT try to auto-close open sessions by timestamp here using openMap.
+  // If you want an "open" session closing at day end/now, we could add it — but durations based on marks require a following mark.
+
+  // prepare registro object (compatible with rest of your code)
+  return {
+    dias: dias.map(d=>({ dia:d.dia, inicio:d.inicio, fin:d.fin||null })),
+    sessions,
+    objetivoPorNombre,
+    metaByTimerId,
+    rawEvents: evs
+  };
 }
+
 
 // build table rows and apply filters (filters will also filter table)
 function buildAndRenderTable(registro, filters){
@@ -1064,6 +1074,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
