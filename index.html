@@ -232,11 +232,18 @@
 
   <div class="card" style="padding:10px; background:#fff; border-radius:8px; margin:10px 0;">
     <h3>Filtros</h3>
-    <select id="filterDia"><option value=\"\">Todos los días</option></select>
-    <select id="filterFecha"><option value=\"\">Todas las fechas</option></select>
-    <select id=\"filterActividad\">
-      <option value=\"\">Todas las actividades</option>
-    </select>
+    <select id="filterDia">
+  <option value="">Todos los días</option>
+</select>
+
+<select id="filterFecha">
+  <option value="">Todas las fechas</option>
+</select>
+
+<select id="filterActividad">
+  <option value="">Todas las actividades</option>
+</select>
+
     <button id="refreshStatsBtn">🔁 Actualizar</button>
     <div id="statsStatus" style="font-size:12px; color:#555; margin-top:5px;"></div>
   </div>
@@ -1406,6 +1413,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
