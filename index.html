@@ -593,10 +593,11 @@ setInterval(async () => {
         needsSave = true;
 
         logEvento(currentUid, "timer_completado", {
-  timerId,
+  timerId: t.createdAt,
   name: t.name,
   endElapsed: elapsedReal
 });
+
 
       }
     }
@@ -687,10 +688,11 @@ window.resetTimer = async i => {
 
   logEvento(currentUid, "timer_reseteado", {
   timerId,
-  name: t.name,
+  name: timers[i] ? timers[i].name : null,
   prevElapsed: prevElapsed,
   endElapsed: 0
 });
+
 
 
   renderTimers();
@@ -935,7 +937,9 @@ async function renderRegistroEventos(){
       const objetivo = meta ? meta.target : (ev.target || null);
 
       // nombre cronómetro: preferir ev.name (algunos eventos incluyen name), sino meta.name, sino timerId
-      const nombre = ev.name || (meta ? meta.name : (timerId || ""));
+      // nombre cronómetro: preferir ev.name, luego meta.name, luego nombresPorTimer, luego timerId
+const nombre = ev.name || (meta ? meta.name : (nombresPorTimer[timerId] || timerId || "Sin nombre"));
+
 
       return {
         id: ev.id || `${ev.tipo}-${ev.timestamp}`,
@@ -958,14 +962,20 @@ async function renderRegistroEventos(){
 /* --- SNIPPET: construir SESSIONS y exponer window.registroProcesado --- */
 /* Pegar justo después de construir `eventosArr`, `dias`, `timersMeta`, `filas` */
 // --- Construir objetivos reales según eventos ---
+// --- Construir objetivos reales según eventos (normalize target names: target, targetMin, objetivo, meta.target) ---
 const objetivosPorTimer = {};
 eventosArr.forEach(ev => {
-  if (ev.tipo === "timer_creado" || ev.tipo === "timer_editado") {
-    if (ev.timerId && ev.target !== undefined) {
-      objetivosPorTimer[ev.timerId] = Number(ev.target);
+  if (ev && (ev.tipo === "timer_creado" || ev.tipo === "timer_editado")) {
+    if (ev.timerId) {
+      const t = (ev.target !== undefined && ev.target !== null ? ev.target
+                : (ev.targetMin !== undefined && ev.targetMin !== null ? ev.targetMin
+                : (ev.objetivo !== undefined && ev.objetivo !== null ? ev.objetivo
+                : (ev.meta && ev.meta.target !== undefined ? ev.meta.target : null)))));
+      if (t !== null && t !== undefined && t !== "") objetivosPorTimer[ev.timerId] = Number(t);
     }
   }
 });
+
 
 (function createAndExposeRegistroProcesado(){
   // --- util parse marca
@@ -985,7 +995,7 @@ eventosArr.forEach(ev => {
   }
 
   // --- construir objetivosPorTimer desde events (soporta varios nombres de campo)
-  const objetivosPorTimer = {};
+  
   const nombresPorTimer = {};
   eventosArr.forEach(ev => {
     if(!ev || !ev.tipo) return;
@@ -1106,18 +1116,32 @@ eventosArr.forEach(ev => {
       const durationSec = calcDuracion(startEv, bestEndEv);
 
       // determine dia using startEv.timestamp and dias array
-      let diaNum = null;
-      const st = new Date(startEv.timestamp);
-      for(const d of dias){
-        const s = new Date(d.inicio);
-        const e = d.fin ? new Date(d.fin) : null;
-        if(e){
-          if(st >= s && st <= e){ diaNum = d.dia; break; }
-        } else {
-          if(st >= s){ diaNum = d.dia; break; }
-        }
+      // Asegurar que encontramos un timestamp válido (startEv.timestamp, startEv.ts, startEv.time, etc.)
+const rawStartTs =
+      (startEv.timestamp !== undefined && startEv.timestamp !== null ? startEv.timestamp :
+      (startEv.ts !== undefined && startEv.ts !== null ? startEv.ts :
+      (startEv.time !== undefined && startEv.time !== null ? startEv.time :
+      (startEv.fecha !== undefined && startEv.fecha !== null ? startEv.fecha :
+      null))));
+
+const st = rawStartTs ? new Date(rawStartTs) : null;
+
+let diaNum = null;
+if (st && !isNaN(st)) {
+    for(const d of dias){
+      const s = new Date(d.inicio);
+      const e = d.fin ? new Date(d.fin) : null;
+      if(e){
+        if(st >= s && st <= e){ diaNum = d.dia; break; }
+      } else {
+        if(st >= s){ diaNum = d.dia; break; }
       }
-      const dateKey = startEv && startEv.timestamp ? (new Date(startEv.timestamp)).toISOString().slice(0,10) : null;
+    }
+}
+
+// dateKey basado en el timestamp válido detectado
+const dateKey = st && !isNaN(st) ? st.toISOString().slice(0,10) : null;
+
 
       // nombre preferido
       const name = startEv.name || nombresPorTimer[tid] || (timersMeta && timersMeta[tid] && timersMeta[tid].name) || null;
@@ -1215,6 +1239,36 @@ eventosArr.forEach(ev => {
   Object.keys(objetivosPorTimer).forEach(k => {
     finalTimersMeta[k] = Object.assign({}, finalTimersMeta[k] || {}, { name: finalTimersMeta[k] && finalTimersMeta[k].name ? finalTimersMeta[k].name : (nombresPorTimer[k] || (finalTimersMeta[k] && finalTimersMeta[k].name) || null), target: Number(objetivosPorTimer[k]) });
   });
+// --- ENRIQUECER filas con duración y cumplido buscando la sesión más relevante ---
+if (Array.isArray(filas) && filas.length > 0) {
+  filas = filas.map(f => {
+    const tid = f.raw && f.raw.timerId ? f.raw.timerId : null;
+    let match = null;
+    if (tid) {
+      // Prefer match whose time range contains the event timestamp
+      const evTs = Date.parse(f.timestamp);
+      match = sessions.find(s => {
+        if (s.timerId !== tid) return false;
+        const st = s.startTs ? Date.parse(s.startTs) : NaN;
+        const en = s.endTs ? Date.parse(s.endTs) : null;
+        if (!isNaN(st) && !isNaN(evTs)) {
+          if (en !== null) return (evTs >= st && evTs <= en);
+          return (evTs >= st);
+        }
+        return false;
+      });
+      // fallback: any session with same timerId
+      if (!match) match = sessions.find(s => s.timerId === tid);
+    }
+    const dur = match ? (match.durationSec ?? null) : null;
+    const objetivoMin = match ? (match.objetivoMin ?? null) : ( (f.objetivo !== undefined && f.objetivo !== null) ? Number(f.objetivo) : null );
+    const cumplido = (dur != null && objetivoMin != null) ? (dur >= objetivoMin * 60) : null;
+    return Object.assign({}, f, {
+      duracion: dur,
+      cumplido: cumplido
+    });
+  });
+}
 
   window.registroProcesado = {
     dias: dias.map(d => ({ dia: d.dia, inicio: d.inicio, fin: d.fin || null })),
@@ -1231,36 +1285,63 @@ eventosArr.forEach(ev => {
    =============================== */
 
 function initStats() {
+    // asegúrate de tener registro procesado y DOM
     if (!window.registroProcesado) return;
-
     const registro = window.registroProcesado;
 
-    // Filtros
+    // obtener elementos y comprobar existencia
     const fd = document.getElementById("filterDia");
     const ff = document.getElementById("filterFecha");
     const fa = document.getElementById("filterActividad");
+    const statusEl = document.getElementById("statsStatus");
+    const resumenEl = document.getElementById("statsResumen");
 
-    // Reiniciar combos
+    if (!fd || !ff || !fa || !statusEl || !resumenEl) {
+      // aún no existe el DOM (o no estás en la sección); reintentar más tarde
+      setTimeout(initStats, 100);
+      return;
+    }
+
+    // Reiniciar combos (limpio)
     fd.innerHTML = `<option value="">Todos los días</option>`;
     ff.innerHTML = `<option value="">Todas las fechas</option>`;
-    fa.innerHTML = `<option value=\"\">Todas las actividades</option>`;
+    fa.innerHTML = `<option value="">Todas las actividades</option>`;
 
-    // Días
-    registro.dias
-        .sort((a,b)=>a.dia - b.dia)
-        .forEach(d=> fd.innerHTML += `<option value="${d.dia}">Día ${d.dia}</option>`);
+    // DÍAS: incluir AUTO días si existen (strings o números)
+    const diasList = registro.dias && registro.dias.length ? registro.dias.map(d => d.dia) : [];
+    // si no hay días detectados, intentar derivar días únicos desde sessions.dateKey
+    if (diasList.length === 0) {
+      const ds = [...new Set(registro.sessions.map(s => s.dia).filter(x => x !== null && x !== undefined))];
+      diasList.push(...ds);
+    }
+    // poblar
+    [...new Set(diasList)].sort((a,b)=> {
+       const na = isNaN(Number(a)) ? String(a) : Number(a);
+       const nb = isNaN(Number(b)) ? String(b) : Number(b);
+       if (na < nb) return -1;
+       if (na > nb) return 1;
+       return 0;
+    }).forEach(d => fd.innerHTML += `<option value="${d}">Día ${d}</option>`);
 
-    // Fechas
+    // FECHAS (dateKey)
     const fechas = [...new Set(registro.sessions.map(s=>s.dateKey).filter(x=>x))].sort();
     fechas.forEach(f=> ff.innerHTML += `<option value="${f}">${f}</option>`);
 
-    // Actividades
+    // ACTIVIDADES (name)
     const acts = [...new Set(registro.sessions.map(s=>s.name).filter(x=>x))].sort();
     acts.forEach(a=> fa.innerHTML += `<option value="${a}">${a}</option>`);
 
-    // Acción inicial
+    // Adjuntar listeners (con chequeo)
+    fd.onchange = refrescarEstadisticas;
+    ff.onchange = refrescarEstadisticas;
+    fa.onchange = refrescarEstadisticas;
+    const fr = document.getElementById("refreshStatsBtn");
+    if (fr) fr.onclick = refrescarEstadisticas;
+
+    // Primera actualización
     refrescarEstadisticas();
 }
+
 
 // Formatos
 function fmt(s){
@@ -1325,18 +1406,7 @@ function refrescarEstadisticas(){
 }
 
 /*  Eventos  */
-setTimeout(() => {
-    const fd = document.getElementById("filterDia");
-    const ff = document.getElementById("filterFecha");
-    const fa = document.getElementById("filterActividad");
-    const fr = document.getElementById("refreshStatsBtn");
 
-    if (fd) fd.onchange = refrescarEstadisticas;
-    if (ff) ff.onchange = refrescarEstadisticas;
-    if (fa) fa.onchange = refrescarEstadisticas;
-    if (fr) fr.onclick = refrescarEstadisticas;
-
-}, 50);
 
 
 /* Auto iniciar cuando procesado esté listo */
@@ -1406,6 +1476,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
