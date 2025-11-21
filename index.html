@@ -3,8 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Proyecto Armando - Corregido</title>
-
+<title>Proyecto Armando - Reparado</title>
 <style>
   body { font-family: 'Segoe UI', sans-serif; background: #dbdace; color: #a1a1a1; display:flex; flex-direction:column; align-items:center; padding:20px; }
   h1 { margin-bottom:10px; color:#1a1a1a; }
@@ -12,6 +11,7 @@
   button:hover{background:#5a7be0;}
   #timers-container{display:grid; grid-template-columns:repeat(3,1fr); gap:15px; width:90%; max-width:900px;}
   .timer{background:#1a2f7a; border:1px solid #333; border-radius:10px; padding:10px; display:flex; flex-direction:column; align-items:center;}
+  .timer.completed{background:#164d16;border-color:#1d7a1d;}
   .hidden{display:none!important;}
   #registroTable{width:95%; max-width:1100px; border-collapse:collapse; margin-top:12px; background:#f7f7f7; color:#111; border-radius:8px; overflow:hidden;}
   #registroTable thead th{background:#3b5dd1; color:#fff; padding:10px; text-align:left; font-weight:600;}
@@ -19,11 +19,14 @@
   .small{font-size:.9rem;color:#666;}
   .no-day{background:#fff3cd!important;}
   #menu{position:fixed; top:10px; right:10px; left:auto; display:flex; flex-direction:column; gap:5px;}
+  .controls { margin-bottom: 20px; }
+  input, textarea { padding:6px; border-radius:5px; border:1px solid #555; background:#181818; color:#eee; }
+  textarea { resize: vertical; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-<h1>Proyecto Armando (corregido)</h1>
+<h1>Proyecto Armando (reparado)</h1>
 
 <div id="menu">
   <button onclick="openSection('mainPage')">🏠 Cronómetros</button>
@@ -32,6 +35,7 @@
 
 <section id="mainPage">
   <div id="dayInfo" class="hidden"></div>
+
   <div id="loginPanel">
     <h3>Acceso privado</h3>
     <input type="email" id="emailInput" placeholder="Correo autorizado">
@@ -69,7 +73,7 @@
   <h2>📜 Registro de eventos (historial)</h2>
 
   <div id="statsWrapper" style="margin-top:25px; width:90%; max-width:1100px;">
-    <h2 style="margin-top:25px;">📈 Estadísticas basadas en el registro</h2>
+    <h2 style="margin-top:25px;">📈 Estadísticas</h2>
 
     <div class="card small" style="background:#eef; padding:10px; border-radius:8px;">
       Datos generados automáticamente a partir del historial de eventos.
@@ -80,6 +84,9 @@
       <select id="filterDia"><option value="">Todos los días</option></select>
       <select id="filterFecha"><option value="">Todas las fechas</option></select>
       <select id="filterActividad"><option value="">Todas las actividades</option></select>
+      <select id="filterWeek"><option value="">Todas las semanas</option></select>
+      <select id="filterMonth"><option value="">Todos los meses</option></select>
+      <select id="filterYear"><option value="">Todos los años</option></select>
       <button id="refreshStatsBtn">🔁 Actualizar</button>
       <div id="statsStatus" style="font-size:12px; color:#555; margin-top:5px;"></div>
     </div>
@@ -102,7 +109,7 @@
 
   <div id="registroWrapper">
     <div id="registroControls">
-      <span class="small">Se muestran eventos sincronizados desde Firebase y asignados a días de trabajo calculados a partir de <b>dia_iniciado</b> / <b>dia_finalizado</b>.</span>
+      <span class="small">Se muestran eventos sincronizados desde Firebase y asignados a días de trabajo (dia_iniciado / dia_finalizado).</span>
       <button id="refreshRegistroBtn">🔁 Refrescar ahora</button>
     </div>
 
@@ -116,7 +123,7 @@
           <th>Fecha y hora</th>
           <th>Objetivo (min)</th>
           <th>Creado</th>
-          <th>Duración</th>
+          <th>Duración (s)</th>
           <th>Cumplido</th>
         </tr>
       </thead>
@@ -126,13 +133,15 @@
 </section>
 
 <script type="module">
-// ---- variables
+// ---------------- Variables globales ----------------
 let filas = [];
 let eventosRefGlobal = null;
 let lastEventosListener = null;
+let sessionMapByStart = {};
+let registroProcesado = null;
 let chartAct = null, chartDia = null;
 
-// Firebase imports
+// ---------------- Firebase imports ----------------
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
 import { getDatabase, ref, set, onValue, push } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
@@ -146,11 +155,11 @@ const firebaseConfig = {
   messagingSenderId: "78500747038",
   appId: "1:78500747038:web:2b5fdec3731a203c7f1b0f"
 };
-
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const auth = getAuth(app);
 
+// ---------------- Conserva la sección de cronómetros (no alterada) ----------------
 let dbRef;
 let timers = [];
 let dayStarted = null;
@@ -158,7 +167,6 @@ let dayEnded = null;
 let currentUid = null;
 const loggedCompletions = new Set();
 
-// ---- auth
 document.getElementById("loginEmailBtn").onclick = async () => {
   const email = document.getElementById("emailInput").value;
   const pass = document.getElementById("passwordInput").value;
@@ -167,7 +175,6 @@ document.getElementById("loginEmailBtn").onclick = async () => {
 };
 document.getElementById("logoutBtn").onclick = () => signOut(auth);
 
-// ---- auth state
 onAuthStateChanged(auth, user => {
   if(user){
     currentUid = user.uid;
@@ -189,7 +196,6 @@ onAuthStateChanged(auth, user => {
   }
 });
 
-// ---- listen/free save
 function listen(){
   onValue(dbRef, snap => {
     const data = snap.val() || {};
@@ -202,51 +208,45 @@ function listen(){
 }
 async function save(){
   if(!dbRef) return;
-  try{
-    await set(dbRef, { timers, dayStarted, dayEnded, updatedAt:new Date().toISOString() });
-  }catch(e){ console.error("Error guardando:", e); }
+  try{ await set(dbRef, { timers, dayStarted, dayEnded, updatedAt:new Date().toISOString() }); }
+  catch(e){ console.error("Error guardando:", e); }
 }
 
-// ---- log events
 async function logEvento(uid, tipo, dataExtra = {}) {
   if(!uid) return;
-  try {
+  try{
     const eventosRef = ref(db, `usuarios/${uid}/historialEventos`);
     const evento = { timestamp: new Date().toISOString(), tipo, usuario: uid, ...dataExtra };
     const newRef = push(eventosRef);
     await set(newRef, evento);
-  } catch(e){ console.error("Error logeando evento:", e); }
+  }catch(e){ console.error("Error logeando evento:", e); }
 }
 
-// ---- utils
 function formatTimeFromSeconds(s){
   if(s == null || s === undefined) return "";
-  s = Number(s);
-  if(isNaN(s)) return "";
+  s = Number(s); if(isNaN(s)) return "";
   const h = String(Math.floor(s/3600)).padStart(2,"0");
   const m = String(Math.floor((s%3600)/60)).padStart(2,"0");
   const s2 = String(s%60).padStart(2,"0");
   return `${h}:${m}:${s2}`;
 }
 function formatLocal(ts){
-  try { return new Date(ts).toLocaleString(); } catch(e) { return ts; }
+  try { return new Date(ts).toLocaleString(); } catch(e){ return ts; }
 }
 function escapeHtml(unsafe){
   if(!unsafe && unsafe !== 0) return "";
   return String(unsafe).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;");
 }
 
-// ---- UI navigation
+// UI nav
 window.openSection = function(sectionId){
   document.getElementById("mainPage").classList.add("hidden");
   document.getElementById("registroEventos").classList.add("hidden");
   document.getElementById(sectionId).classList.remove("hidden");
-  if(sectionId === "registroEventos") {
-    setTimeout(()=> renderRegistroEventos(), 20);
-  }
+  if(sectionId === "registroEventos") setTimeout(()=> renderRegistroEventos(), 20);
 };
 
-// ---- timers UI (kept minimal)
+// Timers UI (kept from original)
 document.getElementById("createTimerBtn").onclick = async () => {
   const n = document.getElementById("activityName").value.trim();
   const t = Number(document.getElementById("targetMinutes").value);
@@ -316,7 +316,7 @@ setInterval(async ()=>{
       const elapsedReal = t.elapsed + Math.floor((now - new Date(t.startedAt))/1000);
       if(!t.completed && t.target && elapsedReal >= t.target*60){
         t.completed = true; needsSave = true;
-        logEvento(currentUid,"timer_completado",{ timerId: t.createdAt, name: t.name, endElapsed: elapsedReal });
+        logEvento(currentUid,"timer_completado",{ timerId: t.createdAt, name: t.name, endElapsed: elapsedReal});
       }
     }
   });
@@ -386,7 +386,7 @@ function enableDragAndDrop(){
   });
 }
 
-// ---- day buttons
+// day buttons
 document.getElementById("startDayBtn").onclick = async () => {
   if(dayStarted) return alert("El día ya está iniciado.");
   dayStarted = new Date().toISOString(); dayEnded = null; await save();
@@ -404,131 +404,129 @@ document.getElementById("endDayBtn").onclick = async () => {
 };
 document.getElementById("addTimerBtn").onclick = () => document.getElementById("formSection").classList.toggle("hidden");
 
-// ---- REGISTRO y ESTADISTICAS (VERSIÓN B) ----
+// ---------------- Registro y Estadísticas (reconstruido) ----------------
 
-document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEventos();
-
-function safeToISOStringMaybe(ts){
-  if(!ts) return null;
-  if(typeof ts === "number") return new Date(ts).toISOString();
-  if(typeof ts === "string"){
-    // if already ISO-like, return as-is
-    try { const d = new Date(ts); if(!isNaN(d)) return d.toISOString(); } catch(e){}
-    return ts;
+// helper to safely parse/normalize timestamp to ISO string
+function normalizeTimestamp(ts){
+  if(!ts && ts!==0) return null;
+  if(typeof ts === 'number') return new Date(ts).toISOString();
+  if(typeof ts === 'string'){
+    const d = new Date(ts);
+    if(!isNaN(d)) return d.toISOString();
+    return ts; // leave as-is
   }
   return null;
 }
 
-function processEventosArray(eventosArr){
-  // sanitize: keep only objects
-  const evs = (eventosArr || []).filter(e => e && typeof e === "object");
-  // normalize timestamp to ISO string when possible
-  evs.forEach(e => {
-    if(e.timestamp && typeof e.timestamp === "number") e.timestamp = new Date(e.timestamp).toISOString();
-    // leave string timestamps as-is
-  });
-
-  // timersMeta
-  const timersMeta = {};
-  evs.forEach(ev => {
-    if(ev.tipo === "timer_creado" && ev.timerId){
-      timersMeta[ev.timerId] = { name: ev.name || ev.timerId, target: (ev.target!==undefined?ev.target:null), createdAt: ev.timestamp || null };
+// process events -> sessions and days
+function processEventsToRegistro(eventosArr){
+  // sanitize, map to objects and normalize timestamps
+  const evs = (eventosArr||[]).filter(e=> e && typeof e === 'object').map(e => ({...e, timestamp: normalizeTimestamp(e.timestamp)}));
+  // build name->targetMin mapping from timer_creado events (user requested: match by name)
+  const objetivoPorNombre = {};
+  const metaByTimerId = {};
+  evs.forEach(ev=>{
+    if(ev.tipo === 'timer_creado'){
+      const name = ev.name || null;
+      if(name && ev.targetMin!==undefined && ev.targetMin!==null){
+        objetivoPorNombre[name] = Number(ev.targetMin);
+      }
+      if(ev.timerId){
+        metaByTimerId[ev.timerId] = { name: ev.name || ev.timerId, targetMin: ev.targetMin ?? null, createdAt: ev.timestamp ?? null };
+      }
     }
   });
 
-  // dias pairing
+  // extract day intervals
   const dias = [];
-  const inicios = evs.filter(e => e.tipo === "dia_iniciado").sort((a,b)=> new Date(a.timestamp) - new Date(b.timestamp));
-  const finales = evs.filter(e => e.tipo === "dia_finalizado").sort((a,b)=> new Date(a.timestamp) - new Date(b.timestamp));
+  const inicios = evs.filter(e=>e.tipo==='dia_iniciado').sort((a,b)=> Date.parse(a.timestamp||0) - Date.parse(b.timestamp||0));
+  const finales = evs.filter(e=>e.tipo==='dia_finalizado').sort((a,b)=> Date.parse(a.timestamp||0) - Date.parse(b.timestamp||0));
   let usedFinal = new Set();
-  inicios.forEach((ini)=>{
-    const inicioTs = new Date(ini.timestamp);
+  inicios.forEach(ini=>{
+    const inicioTs = Date.parse(ini.timestamp || 0);
     let matched = null;
     for(let j=0;j<finales.length;j++){
       if(usedFinal.has(j)) continue;
       const f = finales[j];
-      const fTs = new Date(f.timestamp);
+      const fTs = Date.parse(f.timestamp || 0);
       if(fTs >= inicioTs){ matched = f; usedFinal.add(j); break; }
     }
-    dias.push({ dia: dias.length+1, inicio: ini.timestamp, fin: matched ? matched.timestamp : null, rawInicioEvent: ini, rawFinEvent: matched || null });
+    dias.push({ dia: dias.length+1, inicio: ini.timestamp, fin: matched? matched.timestamp:null, rawInicio: ini, rawFin: matched||null });
   });
 
-  // helper calcDuracion (simple)
-  function parseMarcaToSec(m){
-    if(m===undefined || m===null) return null;
-    if(typeof m === "number") return Number(m);
-    const s = String(m).trim();
-    if(!s) return null;
-    if(s.includes(":")){
-      const parts = s.split(":").map(x=>Number(x));
-      if(parts.length===3) return parts[0]*3600 + parts[1]*60 + parts[2];
-      if(parts.length===2) return parts[0]*60 + parts[1];
+  // helper to determine which day a timestamp belongs to
+  function findDiaForTs(ts){
+    if(!ts) return null;
+    const t = Date.parse(ts);
+    for(const d of dias){
+      const s = Date.parse(d.inicio || 0);
+      const e = d.fin ? Date.parse(d.fin) : null;
+      if(e){
+        if(t>=s && t<=e) return d.dia;
+      } else {
+        if(t>=s) return d.dia;
+      }
     }
-    const n = Number(s);
-    return isNaN(n)? null : n;
-  }
-  function calcDuracion(startEv, endEv){
-    const m1 = parseMarcaToSec(startEv && (startEv.startElapsed ?? startEv.elapsed ?? startEv.marca));
-    const m2 = parseMarcaToSec(endEv && (endEv.endElapsed ?? endEv.elapsed ?? endEv.marca));
-    if(m1!==null && m2!==null && m2>=m1) return Math.max(0, Math.floor(m2-m1));
-    try{
-      const st = startEv && startEv.timestamp ? Date.parse(startEv.timestamp) : NaN;
-      const en = endEv && endEv.timestamp ? Date.parse(endEv.timestamp) : NaN;
-      if(!isNaN(st) && !isNaN(en) && en>=st) return Math.max(0, Math.floor((en-st)/1000));
-    }catch(e){}
-    return 0;
+    return null;
   }
 
-  // build sessions by pairing timer_iniciado with closest closing event
+  // build sessions pairing timer_iniciado -> closest closing event
   const sessions = [];
-  const openMap = {};
+  const openMap = {}; // tid -> startEv
   for(let i=0;i<evs.length;i++){
     const ev = evs[i];
-    const tipo = ev.tipo; const tid = ev.timerId || null;
-    if(tipo === "timer_iniciado" && tid){ openMap[tid] = ev; continue; }
-    const cierres = ["timer_pausado","timer_reseteado","timer_completado","timer_borrado"];
+    const tipo = ev.tipo;
+    const tid = ev.timerId || null;
+    if(tipo === 'timer_iniciado' && tid){
+      openMap[tid] = ev;
+      continue;
+    }
+    const cierres = ['timer_pausado','timer_reseteado','timer_completado','timer_borrado'];
     if(tid && cierres.includes(tipo)){
       const startEv = openMap[tid];
-      if(!startEv) { continue; }
-      // find best end event among next few for same tid
+      if(!startEv) continue;
+      // find best closing among next few events for same tid
       let best = ev;
       let bestScore = -Infinity;
       for(let j=i; j<Math.min(evs.length, i+12); j++){
         const cand = evs[j];
-        if(!cand) continue;
-        if(cand.timerId !== tid) continue;
+        if(!cand || cand.timerId !== tid) continue;
         if(!cierres.includes(cand.tipo)) continue;
-        const eEl = parseMarcaToSec(cand.endElapsed ?? cand.elapsed ?? cand.marca ?? cand.endElapsed);
-        const ts = cand.timestamp ? Date.parse(cand.timestamp) : 0;
-        let score = 0;
-        if(!isNaN(eEl)) score += eEl*1000;
-        if(!isNaN(ts)) score += Math.floor(ts/1000);
-        const pref = {"timer_pausado":4,"timer_completado":3,"timer_reseteado":2,"timer_borrado":1};
-        score += (pref[cand.tipo]||0);
-        if(score>bestScore){ bestScore=score; best=cand; }
+        const tsCand = cand.timestamp ? Date.parse(cand.timestamp) : 0;
+        const score = tsCand + (cand.tipo === 'timer_pausado'?100000: (cand.tipo==='timer_completado'?80000:0));
+        if(score > bestScore){ bestScore = score; best = cand; }
       }
-      const durationSec = calcDuracion(startEv, best);
-      // determine dia
-      let diaNum = null;
-      try{
-        const st = new Date(startEv.timestamp);
-        for(const d of dias){
-          const s = new Date(d.inicio);
-          const e = d.fin ? new Date(d.fin) : null;
-          if(e){ if(st>=s && st<=e){ diaNum = d.dia; break; } }
-          else { if(st>=s){ diaNum = d.dia; break; } }
-        }
-      }catch(e){}
-      const dateKey = startEv && startEv.timestamp ? (new Date(startEv.timestamp)).toISOString().slice(0,10) : null;
-      const name = startEv.name || (timersMeta[startEv.timerId] && timersMeta[startEv.timerId].name) || startEv.timerId || null;
-      const objetivoMin = (timersMeta[startEv.timerId] && timersMeta[startEv.timerId].target !== undefined) ? Number(timersMeta[startEv.timerId].target) : (startEv.target !== undefined ? Number(startEv.target) : null);
+      // compute duration: prefer endElapsed - startElapsed if present, else timestamp difference
+      let durationSec = 0;
+      const sEl = startEv.startElapsed ?? startEv.elapsed ?? null;
+      const eEl = best.endElapsed ?? best.elapsed ?? null;
+      if(sEl !== null && eEl !== null && !isNaN(Number(sEl)) && !isNaN(Number(eEl))){
+        durationSec = Math.max(0, Math.floor(Number(eEl) - Number(sEl)));
+      } else {
+        const st = startEv.timestamp ? Date.parse(startEv.timestamp) : NaN;
+        const en = best.timestamp ? Date.parse(best.timestamp) : NaN;
+        if(!isNaN(st) && !isNaN(en) && en>=st) durationSec = Math.max(0, Math.floor((en-st)/1000));
+        else durationSec = 0;
+      }
+      // determine dia by startEv timestamp
+      const diaNum = findDiaForTs(startEv.timestamp);
+      const dateKey = startEv.timestamp ? (new Date(startEv.timestamp)).toISOString().slice(0,10) : null;
+      // name: prefer startEv.name, else metaByTimerId
+      const name = startEv.name || (startEv.timerId && metaByTimerId[startEv.timerId] && metaByTimerId[startEv.timerId].name) || null;
+      // objetivo: first look up by name (user requested), fallback to metaByTimerId targetMin
+      let objetivoMin = null;
+      if(name && objetivoPorNombre[name] !== undefined) objetivoMin = Number(objetivoPorNombre[name]);
+      else if(startEv.timerId && metaByTimerId[startEv.timerId] && metaByTimerId[startEv.timerId].targetMin !== undefined) objetivoMin = Number(metaByTimerId[startEv.timerId].targetMin);
+      else if(startEv.target !== undefined) objetivoMin = Number(startEv.target);
+      else objetivoMin = null;
+
       sessions.push({
         timerId: tid,
         name,
         startTs: startEv.timestamp,
         endTs: best.timestamp || null,
-        startElapsed: startEv.startElapsed ?? startEv.elapsed ?? null,
-        endElapsed: best.endElapsed ?? best.elapsed ?? null,
+        startElapsed: sEl,
+        endElapsed: eEl,
         durationSec,
         dia: diaNum,
         dateKey,
@@ -538,195 +536,280 @@ function processEventosArray(eventosArr){
       delete openMap[tid];
     }
   }
-  // close open ones by day end or now
+
+  // close any open map entries using day end or now
   const nowIso = new Date().toISOString();
   Object.keys(openMap).forEach(tid=>{
     const startEv = openMap[tid];
-    let closed=false;
+    let closed = false;
     for(const d of dias){
-      const s = new Date(d.inicio); const e = d.fin ? new Date(d.fin) : null;
-      const st = new Date(startEv.timestamp);
-      if(e && st>=s && st<=e){
-        const fakeEnd = { timestamp: d.fin, tipo: "auto_cierre_por_day_end" };
-        const durationSec = calcDuracion(startEv, fakeEnd);
-        sessions.push({ timerId: tid, name: startEv.name||null, startTs: startEv.timestamp, endTs: d.fin, startElapsed: startEv.startElapsed??null, endElapsed:null, durationSec, dia: d.dia, dateKey: (new Date(startEv.timestamp)).toISOString().slice(0,10), objetivoMin: (timersMeta[tid] && timersMeta[tid].target!==undefined)?Number(timersMeta[tid].target):null, closingType:"auto_cierre_por_day_end"});
-        closed=true; break;
+      const s = Date.parse(d.inicio || 0);
+      const e = d.fin ? Date.parse(d.fin) : null;
+      const st = startEv.timestamp ? Date.parse(startEv.timestamp) : NaN;
+      if(e && !isNaN(st) && st>=s && st<=e){
+        const fakeEnd = { timestamp: d.fin, tipo: 'auto_cierre_por_day_end' };
+        const dur = Math.max(0, Math.floor((Date.parse(d.fin)-Date.parse(startEv.timestamp))/1000));
+        sessions.push({ timerId: tid, name: startEv.name||null, startTs: startEv.timestamp, endTs: d.fin, startElapsed: startEv.startElapsed??null, endElapsed:null, durationSec: dur, dia: d.dia, dateKey:(new Date(startEv.timestamp)).toISOString().slice(0,10), objetivoMin: (metaByTimerId[tid] && metaByTimerId[tid].targetMin!==undefined)?Number(metaByTimerId[tid].targetMin):null, closingType:'auto_cierre_por_day_end' });
+        closed = true; break;
       }
     }
     if(!closed){
-      const fakeEnd = { timestamp: nowIso, tipo: "auto_cierre_por_now" };
-      const durationSec = calcDuracion(startEv, fakeEnd);
-      sessions.push({ timerId: tid, name: startEv.name||null, startTs: startEv.timestamp, endTs: nowIso, startElapsed: startEv.startElapsed??null, endElapsed:null, durationSec, dia:null, dateKey:(new Date(startEv.timestamp)).toISOString().slice(0,10), objetivoMin:(timersMeta[tid] && timersMeta[tid].target!==undefined)?Number(timersMeta[tid].target):null, closingType:"auto_cierre_por_now" });
+      const dur = startEv.timestamp ? Math.max(0, Math.floor((Date.parse(nowIso)-Date.parse(startEv.timestamp))/1000)) : 0;
+      sessions.push({ timerId: tid, name: startEv.name||null, startTs: startEv.timestamp, endTs: nowIso, startElapsed: startEv.startElapsed??null, endElapsed:null, durationSec: dur, dia:null, dateKey: startEv.timestamp ? (new Date(startEv.timestamp)).toISOString().slice(0,10) : null, objetivoMin: (metaByTimerId[tid] && metaByTimerId[tid].targetMin!==undefined)?Number(metaByTimerId[tid].targetMin):null, closingType:'auto_cierre_por_now' });
     }
   });
 
-  // finalize timersMeta copy
-  const finalTimersMeta = Object.assign({}, timersMeta);
-  // expose
-  return { dias: dias.map(d=>({dia:d.dia,inicio:d.inicio,fin:d.fin||null})), sessions, timersMeta: finalTimersMeta, rawEvents: evs };
+  // prepare registro object
+  return { dias: dias.map(d=>({ dia:d.dia, inicio:d.inicio, fin:d.fin||null })), sessions, objetivoPorNombre, metaByTimerId, rawEvents: evs };
 }
 
-// init stats and filters
-function initStats(){
-  if(!window.registroProcesado) return;
-  const reg = window.registroProcesado;
+// build table rows and apply filters (filters will also filter table)
+function buildAndRenderTable(registro, filters){
+  // registry.sessions is authoritative for durations; but we also want to show all raw events
+  const raw = registro.rawEvents || [];
+  // create map from event id or timestamp to session (so we can mark durations near timer_pausado)
+  const sessionByStart = {};
+  registro.sessions.forEach(s=>{
+    if(s.startTs) sessionByStart[s.startTs] = s;
+  });
+
+  // generate rows for each raw event
+  const rows = raw.map(ev=>{
+    const ts = ev.timestamp || null;
+    const dia = findDiaForEvent(ts, registro.dias);
+    const name = ev.name || (ev.timerId && registro.metaByTimerId && registro.metaByTimerId[ev.timerId] && registro.metaByTimerId[ev.timerId].name) || ev.timerId || "";
+    const objetivoFromName = registro.objetivoPorNombre && registro.objetivoPorNombre[name] !== undefined ? registro.objetivoPorNombre[name] : (ev.target ?? (registro.metaByTimerId && registro.metaByTimerId[ev.timerId]?registro.metaByTimerId[ev.timerId].targetMin:null));
+    // compute marcaStr
+    const marca = ev.endElapsed ?? ev.elapsed ?? null;
+    const marcaStr = marca !== null ? formatTimeFromSeconds(Number(marca)) : "";
+    // try attach session data when event is the closing event (match by timestamp == session.startTs or event.tipo is a closing and timestamp equals session end)
+    let matchedSession = null;
+    // find by startTs equals ev.timestamp
+    if(sessionByStart[ev.timestamp]) matchedSession = sessionByStart[ev.timestamp];
+    // else try to find session where endTs == ev.timestamp
+    if(!matchedSession){
+      matchedSession = registro.sessions.find(s=> s.endTs && ev.timestamp && s.endTs === ev.timestamp);
+    }
+    const dur = matchedSession ? matchedSession.durationSec : null;
+    const cumplido = (()=> {
+      const objMin = objetivoFromName;
+      if(objMin===null || objMin===undefined) return false;
+      const targetSec = Number(objMin)*60;
+      if(dur!==null && dur!==undefined) return dur >= targetSec;
+      // fallback: if marca >= targetSec
+      if(marca !== null && !isNaN(Number(marca))) return Number(marca) >= targetSec;
+      return false;
+    })();
+    return {
+      id: ev.id || (ev.tipo + '-' + (ev.timestamp||Math.random())),
+      dia,
+      nombre: name,
+      tipo: ev.tipo,
+      marca,
+      marcaStr,
+      timestamp: ts,
+      objetivo: objetivoFromName,
+      creado: ev.createdAt || ev.timestamp || "",
+      duracion: dur,
+      cumplido
+    };
+  });
+
+  // apply filters to rows (filters object)
+  let filtered = rows.slice();
+  if(filters){
+    if(filters.dia) filtered = filtered.filter(r => String(r.dia) === String(filters.dia));
+    if(filters.fecha) filtered = filtered.filter(r => r.timestamp && r.timestamp.startsWith(filters.fecha));
+    if(filters.actividad) filtered = filtered.filter(r => r.nombre === filters.actividad);
+    if(filters.week) filtered = filtered.filter(r => r.timestamp && weekOfDate(r.timestamp) === filters.week);
+    if(filters.month) filtered = filtered.filter(r => r.timestamp && (new Date(r.timestamp)).toISOString().slice(0,7) === filters.month);
+    if(filters.year) filtered = filtered.filter(r => r.timestamp && (new Date(r.timestamp)).getFullYear().toString() === filters.year);
+  }
+
+  // render tbody
+  const tbody = document.getElementById("registroBody");
+  tbody.innerHTML = "";
+  filtered.forEach(f=>{
+    const tr = document.createElement("tr");
+    if(f.dia === null) tr.classList.add("no-day");
+    tr.innerHTML = `<td>${f.dia===null? "<i>sin día asignado</i>": f.dia}</td>
+      <td>${escapeHtml(f.nombre||"")}</td>
+      <td>${escapeHtml(f.tipo||"")}</td>
+      <td>${f.marcaStr || ""}</td>
+      <td>${f.timestamp ? formatLocal(f.timestamp) : ""}</td>
+      <td>${f.objetivo===null||f.objetivo===undefined? "": f.objetivo}</td>
+      <td>${f.creado? formatLocal(f.creado): ""}</td>
+      <td>${f.duracion? f.duracion : ""}</td>
+      <td>${f.cumplido? "✔":"✖"}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  // update stats view (we'll reuse refrescarEstadisticas which reads from registroProcesado and filters)
+  refrescarEstadisticas(); // will apply same filters to charts
+}
+
+// helper to determine dia for event using dias array
+function findDiaForEvent(ts, diasArr){
+  if(!ts) return null;
+  try{
+    const t = Date.parse(ts);
+    for(const d of diasArr){
+      const s = Date.parse(d.inicio || 0);
+      const e = d.fin ? Date.parse(d.fin) : null;
+      if(e){
+        if(t>=s && t<=e) return d.dia;
+      } else {
+        if(t>=s) return d.dia;
+      }
+    }
+  }catch(e){}
+  return null;
+}
+
+// week helper: return YYYY-Www string
+function weekOfDate(isoTs){
+  if(!isoTs) return null;
+  const d = new Date(isoTs);
+  // get ISO week number
+  const target = new Date(d.valueOf());
+  const dayNr = (d.getUTCDay() + 6) % 7;
+  target.setUTCDate(target.getUTCDate() - dayNr + 3);
+  const firstThursday = target.valueOf();
+  target.setUTCMonth(0,1);
+  if(target.getUTCDay() !== 4) target.setUTCDate(1 + ((4 - target.getUTCDay()) + 7) % 7);
+  const weekNumber = 1 + Math.ceil((firstThursday - target) / 604800000);
+  return `${d.getUTCFullYear()}-W${String(weekNumber).padStart(2,'0')}`;
+}
+
+// init stats UI
+function initStatsUI(){
+  if(!registroProcesado) return;
   const fd = document.getElementById("filterDia");
   const ff = document.getElementById("filterFecha");
   const fa = document.getElementById("filterActividad");
+  const fw = document.getElementById("filterWeek");
+  const fm = document.getElementById("filterMonth");
+  const fy = document.getElementById("filterYear");
+  // reset
   fd.innerHTML = `<option value="">Todos los días</option>`;
   ff.innerHTML = `<option value="">Todas las fechas</option>`;
   fa.innerHTML = `<option value="">Todas las actividades</option>`;
-  reg.dias.sort((a,b)=>a.dia-b.dia).forEach(d=> fd.innerHTML += `<option value="${d.dia}">Día ${d.dia}</option>`);
-  const fechas = [...new Set(reg.sessions.map(s=>s.dateKey).filter(x=>x))].sort();
+  fw.innerHTML = `<option value="">Todas las semanas</option>`;
+  fm.innerHTML = `<option value="">Todos los meses</option>`;
+  fy.innerHTML = `<option value="">Todos los años</option>`;
+  // days
+  registroProcesado.dias.sort((a,b)=>a.dia-b.dia).forEach(d=> fd.innerHTML += `<option value="${d.dia}">Día ${d.dia}</option>`);
+  // fechas unique from sessions' dateKey
+  const fechas = [...new Set(registroProcesado.sessions.map(s=>s.dateKey).filter(x=>x))].sort();
   fechas.forEach(f=> ff.innerHTML += `<option value="${f}">${f}</option>`);
-  const acts = [...new Set(reg.sessions.map(s=>s.name).filter(x=>x))].sort();
+  // actividades from sessions names
+  const acts = [...new Set(registroProcesado.sessions.map(s=>s.name).filter(x=>x))].sort();
   acts.forEach(a=> fa.innerHTML += `<option value="${a}">${a}</option>`);
-  refrescarEstadisticas();
+  // weeks
+  const weeks = [...new Set(registroProcesado.sessions.map(s=> s.startTs ? weekOfDate(s.startTs) : null).filter(x=>x))].sort();
+  weeks.forEach(w=> fw.innerHTML += `<option value="${w}">${w}</option>`);
+  // months
+  const months = [...new Set(registroProcesado.sessions.map(s=> s.startTs ? (new Date(s.startTs)).toISOString().slice(0,7) : null).filter(x=>x))].sort();
+  months.forEach(m=> fm.innerHTML += `<option value="${m}">${m}</option>`);
+  // years
+  const years = [...new Set(registroProcesado.sessions.map(s=> s.startTs ? String((new Date(s.startTs)).getFullYear()) : null).filter(x=>x))].sort();
+  years.forEach(y=> fy.innerHTML += `<option value="${y}">${y}</option>`);
 }
 
-function filtrarStats(){
-  const registro = window.registroProcesado;
-  const d = document.getElementById("filterDia").value;
-  const f = document.getElementById("filterFecha").value;
-  const a = document.getElementById("filterActividad").value;
-  return registro.sessions.filter(s=>{
-    if(d && String(s.dia)!==d) return false;
-    if(f && s.dateKey!==f) return false;
-    if(a && s.name!==a) return false;
-    return true;
-  }).sort((x,y)=> new Date(x.startTs) - new Date(y.startTs));
+// filters -> object
+function readFilters(){
+  return {
+    dia: document.getElementById("filterDia").value || null,
+    fecha: document.getElementById("filterFecha").value || null,
+    actividad: document.getElementById("filterActividad").value || null,
+    week: document.getElementById("filterWeek").value || null,
+    month: document.getElementById("filterMonth").value || null,
+    year: document.getElementById("filterYear").value || null
+  };
 }
 
-function fmt(s){ const h=Math.floor(s/3600); const m=Math.floor((s%3600)/60); const se=s%60; return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(se).padStart(2,'0')}`; }
-
+// refrescarEstadisticas draws charts using registroProcesado and current filters
 function refrescarEstadisticas(){
-  const lista = filtrarStats();
+  if(!registroProcesado) return;
+  const filters = readFilters();
+  // reuse filtrarStats logic: filter sessions
+  let lista = registroProcesado.sessions.slice();
+  if(filters.dia) lista = lista.filter(s=> String(s.dia) === String(filters.dia));
+  if(filters.fecha) lista = lista.filter(s=> s.dateKey === filters.fecha);
+  if(filters.actividad) lista = lista.filter(s=> s.name === filters.actividad);
+  if(filters.week) lista = lista.filter(s=> weekOfDate(s.startTs) === filters.week);
+  if(filters.month) lista = lista.filter(s=> s.startTs ? (new Date(s.startTs)).toISOString().slice(0,7) === filters.month : false);
+  if(filters.year) lista = lista.filter(s=> s.startTs ? String((new Date(s.startTs)).getFullYear()) === filters.year : false);
+
   document.getElementById("statsStatus").innerText = `Mostrando ${lista.length} sesiones`;
-  const total = lista.reduce((a,b)=>a + (b.durationSec||0),0);
-  document.getElementById("statsResumen").innerHTML = `<p><b>Tiempo total:</b> ${fmt(total)}</p><p><b>Días afectados:</b> ${[...new Set(lista.map(s=>s.dia).filter(x=>x!=null))].length}</p>`;
+
+  const total = lista.reduce((a,b)=> a + (b.durationSec||0), 0);
+  document.getElementById("statsResumen").innerHTML = `<p><b>Tiempo total:</b> ${formatTimeFromSeconds(total)}</p><p><b>Días afectados:</b> ${[...new Set(lista.map(s=>s.dia).filter(x=>x!=null))].length}</p>`;
+
+  // actividad chart
   const act = {};
   lista.forEach(s => act[s.name] = (act[s.name]||0) + (s.durationSec||0));
   if(chartAct) try{ chartAct.destroy(); }catch(e){}
-  chartAct = new Chart(document.getElementById("chartActividades"), { type:"bar", data:{ labels:Object.keys(act), datasets:[{ label:"segundos", data:Object.values(act)}] } });
+  chartAct = new Chart(document.getElementById("chartActividades"), { type:'bar', data:{ labels:Object.keys(act), datasets:[{ label:'segundos', data:Object.values(act) }] } });
+
+  // dia chart
   const dia = {};
-  lista.forEach(s=> { if(s.dia!==null && s.dia!==undefined) dia[s.dia] = (dia[s.dia]||0) + (s.durationSec||0); });
+  lista.forEach(s => { if(s.dia!==null && s.dia!==undefined) dia[s.dia] = (dia[s.dia]||0) + (s.durationSec||0); });
   if(chartDia) try{ chartDia.destroy(); }catch(e){}
-  chartDia = new Chart(document.getElementById("chartDias"), { type:"line", data:{ labels:Object.keys(dia).map(d=>"Día "+d), datasets:[{label:"segundos", data:Object.values(dia), tension:0.25}] } });
+  chartDia = new Chart(document.getElementById("chartDias"), { type:'line', data:{ labels:Object.keys(dia).map(d=>"Día "+d), datasets:[{ label:'segundos', data:Object.values(dia), tension:0.25 }] } });
 }
 
-// wire filter events
+// wire filters events
 setTimeout(()=>{
   const fd = document.getElementById("filterDia");
   const ff = document.getElementById("filterFecha");
   const fa = document.getElementById("filterActividad");
+  const fw = document.getElementById("filterWeek");
+  const fm = document.getElementById("filterMonth");
+  const fy = document.getElementById("filterYear");
   const fr = document.getElementById("refreshStatsBtn");
-  if(fd) fd.onchange = refrescarEstadisticas;
-  if(ff) ff.onchange = refrescarEstadisticas;
-  if(fa) fa.onchange = refrescarEstadisticas;
-  if(fr) fr.onclick = refrescarEstadisticas;
+  [fd,ff,fa,fw,fm,fy].forEach(el=>{
+    if(el) el.onchange = () => {
+      // rebuild table with current filters
+      buildAndRenderTable(registroProcesado, readFilters());
+    };
+  });
+  if(fr) fr.onclick = () => { buildAndRenderTable(registroProcesado, readFilters()); };
 },50);
 
-// listen for processed registro
-window.addEventListener("registroProcesadoReady", ()=> initStats());
-
-// ---- renderRegistroEventos: reads from Firebase and renders table + triggers processing
-async function renderRegistroEventos(){
+// renderRegistroEventos: read firebase, process and render
+function renderRegistroEventos(){
   if(!currentUid){ alert("Inicia sesión para ver el registro de eventos."); return; }
   const eventosRef = ref(db, `usuarios/${currentUid}/historialEventos`);
-  if(lastEventosListener){
-    lastEventosListener(); lastEventosListener = null;
-  }
+  if(lastEventosListener){ lastEventosListener(); lastEventosListener = null; }
   lastEventosListener = onValue(eventosRef, snap => {
-    const raw = snap.val() || {};
-    const eventosArr = Object.entries(raw).map(([key,val]) => ({ id:key, ...val }));
-    // sort robustly by timestamp if exists
-    eventosArr.sort((a,b)=>{
-      const ta = a && a.timestamp ? Date.parse(a.timestamp) : 0;
-      const tb = b && b.timestamp ? Date.parse(b.timestamp) : 0;
-      return ta - tb;
-    });
-
-    // Build filas for table (include all events that are objects)
-    filas = eventosArr.map(ev => {
-      const ts = ev.timestamp !== undefined ? (typeof ev.timestamp === 'number' ? new Date(ev.timestamp).toISOString() : ev.timestamp) : null;
-      const dia = (function(){
-        try {
-          const d = new Date(ts);
-          return isNaN(d) ? null : null;
-        } catch(e){ return null; }
-      })();
-      const timerId = ev.timerId || null;
-      return {
-        id: ev.id || `${ev.tipo}-${ts}`,
-        dia: null, // will be filled by sessions processing
-        tipo: ev.tipo,
-        nombre: ev.name || (timerId || ""),
-        marca: ev.elapsed ?? ev.endElapsed ?? null,
-        marcaStr: (ev.elapsed||ev.endElapsed) ? formatTimeFromSeconds(Number(ev.elapsed||ev.endElapsed)) : "",
-        timestamp: ts,
-        objetivo: ev.target ?? null,
-        creado: ev.createdAt || ev.timestamp || "",
-        duracion: ev.durationSec || null,
-        cumplido: ev.tipo === "timer_completado"
-      };
-    });
-
-    // process events to sessions/dias
-    const registro = processEventosArray(eventosArr);
-    window.registroProcesado = registro;
-    window.dispatchEvent(new CustomEvent('registroProcesadoReady',{ detail: registro }));
-
-    // update filas' dia and duración if possible using sessions map
-    const sessionByStart = {};
-    registro.sessions.forEach(s=>{
-      const key = s.startTs;
-      if(key) sessionByStart[key] = s;
-    });
-    filas = filas.map(f=>{
-      // try match by timestamp equal to session.startTs, else keep
-      if(f.timestamp && sessionByStart[f.timestamp]){
-        f.dia = sessionByStart[f.timestamp].dia;
-        f.duracion = sessionByStart[f.timestamp].durationSec;
-        f.cumplido = sessionByStart[f.timestamp].durationSec >= (sessionByStart[f.timestamp].objetivoMin?sessionByStart[f.timestamp].objetivoMin*60:0);
-      } else {
-        // leave dia null
-      }
-      return f;
-    });
-
-    // render table
-    const tbody = document.getElementById("registroBody");
-    tbody.innerHTML = "";
-    filas.forEach(f => {
-      const tr = document.createElement("tr");
-      if(f.dia === null) tr.classList.add("no-day");
-      tr.innerHTML = `<td>${f.dia === null ? "<i>sin día asignado</i>" : f.dia}</td>
-        <td>${escapeHtml(f.nombre || "")}</td>
-        <td>${escapeHtml(f.tipo || "")}</td>
-        <td>${f.marcaStr || ""}</td>
-        <td>${f.timestamp ? formatLocal(f.timestamp) : ""}</td>
-        <td>${f.objetivo === null || f.objetivo === undefined ? "" : f.objetivo}</td>
-        <td>${f.creado ? formatLocal(f.creado) : ""}</td>
-        <td>${f.duracion ? formatTimeFromSeconds(f.duracion) : ""}</td>
-        <td>${f.cumplido ? "✔" : "✖"}</td>`;
-      tbody.appendChild(tr);
-    });
-
-    // if no dias, show note
-    if(registro.dias.length === 0){
-      const tr = document.createElement("tr");
-      tr.innerHTML = `<td colspan="9" class="small">No se detectaron pares dia_iniciado / dia_finalizado. Si existe un día en curso, aparecerá como 'en curso' (fin vacío).</td>`;
-      tbody.prepend(tr);
+    try{
+      const raw = snap.val() || {};
+      const eventosArr = Object.entries(raw).map(([key,val]) => ({ id:key, ...val }));
+      // sort by timestamp robustly
+      eventosArr.sort((a,b)=> {
+        const ta = a && a.timestamp ? Date.parse(a.timestamp) : 0;
+        const tb = b && b.timestamp ? Date.parse(b.timestamp) : 0;
+        return ta - tb;
+      });
+      // process into registro
+      registroProcesado = processEventsToRegistro(eventosArr);
+      // now build filas (raw events normalized) and render table with no filters initially
+      buildAndRenderTable(registroProcesado, readFilters());
+      // init filters UI (populates selects)
+      initStatsUI();
+    }catch(e){
+      console.error("Error en renderRegistroEventos:", e);
     }
-
-    // initialize stats and filters now (safe)
-    initStats();
   });
 }
 
-// initial call to renderRegistroEventos is triggered when user opens section
-// helper: refresh stats btn wired above
+// helper: initial manual refresh
+document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEventos();
+
+// auto call when opening section handled in openSection
 
 </script>
+
 </body>
 </html>
