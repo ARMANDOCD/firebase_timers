@@ -769,89 +769,100 @@ function buildAndRenderTable(registro, filters){
   });
 
   // generate rows for each raw event
-  const rows = raw.map(ev=>{
+  const rows = raw.map(ev => {
     const ts = ev.timestamp || null;
     const dia = findDiaForEvent(ts, registro.dias);
-    const name = ev.name || (ev.timerId && registro.metaByTimerId && registro.metaByTimerId[ev.timerId] && registro.metaByTimerId[ev.timerId].name) || ev.timerId || "";
+
+    const name =
+      ev.name ||
+      (ev.timerId &&
+        registro.metaByTimerId &&
+        registro.metaByTimerId[ev.timerId] &&
+        registro.metaByTimerId[ev.timerId].name) ||
+      ev.timerId ||
+      "";
+
     let objetivo = null;
 
-// --- PRIMERO: por timerId (100% exacto)
-if (ev.timerId && registro.metaByTimerId[ev.timerId]) {
-    const meta = registro.metaByTimerId[ev.timerId];
-    if (meta.targetMin !== undefined && meta.targetMin !== null) {
-        objetivo = Number(meta.targetMin);
+    // --- PRIMERO: por timerId (100% exacto)
+    if (ev.timerId && registro.metaByTimerId[ev.timerId]) {
+        const meta = registro.metaByTimerId[ev.timerId];
+        if (meta.targetMin !== undefined && meta.targetMin !== null) {
+            objetivo = Number(meta.targetMin);
+        }
     }
-}
 
-// --- SEGUNDO: por nombre (unifica actividades repetidas)
-if (objetivo === null && name) {
-    if (registro.objetivoPorNombre[name] !== undefined) {
-        objetivo = Number(registro.objetivoPorNombre[name]);
+    // --- SEGUNDO: por nombre (unifica actividades repetidas)
+    if (objetivo === null && name) {
+        if (registro.objetivoPorNombre[name] !== undefined) {
+            objetivo = Number(registro.objetivoPorNombre[name]);
+        }
     }
-}
 
-// --- TERCERO: fallback si el evento tiene target directo
-if (objetivo === null && ev.target !== undefined && ev.target !== null) {
-    objetivo = Number(ev.target);
-}
-
-});
+    // --- TERCERO: fallback si el evento tiene target directo
+    if (objetivo === null && ev.target !== undefined && ev.target !== null) {
+        objetivo = Number(ev.target);
+    }
 
     // compute marcaStr
     const marca = ev.endElapsed ?? ev.elapsed ?? null;
-    const marcaStr = marca !== null ? formatTimeFromSeconds(Number(marca)) : "";
-    // try attach session data when event is the closing event (match by timestamp == session.startTs or event.tipo is a closing and timestamp equals session end)
+    const marcaStr =
+      marca !== null ? formatTimeFromSeconds(Number(marca)) : "";
+
+    // match session
     let matchedSession = null;
 
-// MATCH 1 — cerrado EXACTO (evento final)
-matchedSession = registro.sessions.find(
-    s => s.endTs && ev.timestamp && s.endTs === ev.timestamp
-);
-
-// MATCH 2 — si evento es INICIO, entonces usa startTs
-if (!matchedSession) {
+    // MATCH 1 — cerrado EXACTO (evento final)
     matchedSession = registro.sessions.find(
-        s => s.startTs && ev.timestamp && s.startTs === ev.timestamp
+      (s) => s.endTs && ev.timestamp && s.endTs === ev.timestamp
     );
-}
 
-// MATCH 3 — por rango (si el evento cae dentro de la sesión)
-if (!matchedSession) {
-    const evTime = ev.timestamp ? Date.parse(ev.timestamp) : null;
-    if (evTime) {
-        matchedSession = registro.sessions.find(s => {
-            if (!s.startTs || !s.endTs) return false;
-            const st = Date.parse(s.startTs);
-            const en = Date.parse(s.endTs);
-            return evTime >= st && evTime <= en;
-        });
+    // MATCH 2 — si evento es INICIO
+    if (!matchedSession) {
+      matchedSession = registro.sessions.find(
+        (s) => s.startTs && ev.timestamp && s.startTs === ev.timestamp
+      );
     }
-}
 
+    // MATCH 3 — por rango
+    if (!matchedSession) {
+      const evTime = ev.timestamp ? Date.parse(ev.timestamp) : null;
+      if (evTime) {
+        matchedSession = registro.sessions.find((s) => {
+          if (!s.startTs || !s.endTs) return false;
+          const st = Date.parse(s.startTs);
+          const en = Date.parse(s.endTs);
+          return evTime >= st && evTime <= en;
+        });
+      }
+    }
 
     const dur = matchedSession ? matchedSession.durationSec : null;
-    const cumplido = (()=> {
+
+    const cumplido = (() => {
       const objMin = objetivo;
-      if(objMin===null || objMin===undefined) return false;
-      const targetSec = Number(objMin)*60;
-      if(dur!==null && dur!==undefined) return dur >= targetSec;
-      // fallback: if marca >= targetSec
-      if(marca !== null && !isNaN(Number(marca))) return Number(marca) >= targetSec;
+      if (objMin === null || objMin === undefined) return false;
+      const targetSec = Number(objMin) * 60;
+      if (dur !== null && dur !== undefined) return dur >= targetSec;
+      if (marca !== null && !isNaN(Number(marca)))
+        return Number(marca) >= targetSec;
       return false;
     })();
+
     return {
-      id: ev.id || (ev.tipo + '-' + (ev.timestamp||Math.random())),
+      id: ev.id || ev.tipo + "-" + (ev.timestamp || Math.random()),
       dia,
       nombre: name,
       tipo: ev.tipo,
       marca,
       marcaStr,
       timestamp: ts,
-      objetivo: objetivo,
+      objetivo,
       creado: ev.createdAt || ev.timestamp || "",
-      cumplido
+      cumplido,
     };
-  });
+});
+
 
   // apply filters to rows (filters object)
   let filtered = rows.slice();
@@ -1094,6 +1105,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
