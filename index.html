@@ -970,7 +970,7 @@ eventosArr.forEach(ev => {
       const t = (ev.target !== undefined && ev.target !== null ? ev.target
                 : (ev.targetMin !== undefined && ev.targetMin !== null ? ev.targetMin
                 : (ev.objetivo !== undefined && ev.objetivo !== null ? ev.objetivo
-                : (ev.meta && ev.meta.target !== undefined ? ev.meta.target : null)))));
+                : (ev.meta && ev.meta.target !== undefined ? ev.meta.target : null))));
       if (t !== null && t !== undefined && t !== "") objetivosPorTimer[ev.timerId] = Number(t);
     }
   }
@@ -1476,6 +1476,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
