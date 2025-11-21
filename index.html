@@ -501,11 +501,12 @@ document.getElementById("createTimerBtn").onclick = async () => {
 
   // Log evento: timer creado
   logEvento(currentUid, "timer_creado", {
-    timerId: createdAt,
-    name: n,
-    target: t,
-    note
-  });
+  timerId: createdAt,
+  name: n,
+  targetMin: t,   // <<< nombre estándar
+  note
+});
+
 
   renderTimers();
 };
@@ -592,10 +593,11 @@ setInterval(async () => {
         needsSave = true;
 
         logEvento(currentUid, "timer_completado", {
-          timerId: t.createdAt,
-          name: t.name,
-          elapsed: elapsedReal
-        });
+  timerId,
+  name: t.name,
+  endElapsed: elapsedReal
+});
+
       }
     }
   });
@@ -619,11 +621,11 @@ window.editTimer = async i => {
 
   // Log cambio
   logEvento(currentUid, "timer_editado", {
-    timerId: timers[i].createdAt,
-    cambios: {
-      target: { antes: old.target, despues: timers[i].target }
-    }
-  });
+  timerId: timers[i].createdAt,
+  name: timers[i].name,
+  targetMin: timers[i].target
+});
+
 
   renderTimers();
 };
@@ -644,10 +646,11 @@ window.toggleTimer = async i => {
     await save();
 
     logEvento(currentUid, "timer_iniciado", {
-      timerId,
-      name: t.name,
-      elapsedAntes: t.elapsed
-    });
+  timerId,
+  name: t.name,
+  startElapsed: t.elapsed
+});
+
 
   } else {
     // === pausar ===
@@ -663,10 +666,11 @@ window.toggleTimer = async i => {
     await save();
 
     logEvento(currentUid, "timer_pausado", {
-      timerId,
-      name: t.name,
-      elapsed: t.elapsed
-    });
+  timerId,
+  name: t.name,
+  endElapsed: t.elapsed
+});
+
   }
 
   renderTimers();
@@ -682,9 +686,12 @@ window.resetTimer = async i => {
   await save();
 
   logEvento(currentUid, "timer_reseteado", {
-    timerId,
-    prevElapsed
-  });
+  timerId,
+  name: t.name,
+  prevElapsed: prevElapsed,
+  endElapsed: 0
+});
+
 
   renderTimers();
 };
@@ -1399,6 +1406,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
