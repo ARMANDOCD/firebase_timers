@@ -1136,9 +1136,306 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 }
 
 </script>
+<script>
+// ----------------- Visualizaciones adicionales (no tocan código existente) -----------------
+// Requiere Chart.js ya cargado (tu HTML ya lo incluye)
+// Este script crea canvases/controles extra en #statsWrapper y escucha cambios en filtros.
+// No modifica registroProcesado ni otras funciones; solo lee y representa.
+
+(function(){
+  // util: convierte segundos a HH:MM:SS
+  function secToHHMMSS(s){
+    if(s == null || isNaN(Number(s))) return "";
+    s = Math.max(0, Math.floor(Number(s)));
+    const h = String(Math.floor(s/3600)).padStart(2,"0");
+    const m = String(Math.floor((s%3600)/60)).padStart(2,"0");
+    const ss = String(s%60).padStart(2,"0");
+    return `${h}:${m}:${ss}`;
+  }
+
+  // Espera hasta que el DOM y registroProcesado existan
+  function ready(fn){
+    const interval = setInterval(()=>{
+      if(document.readyState === "complete" && typeof registroProcesado !== "undefined" && registroProcesado !== null){
+        clearInterval(interval);
+        setTimeout(fn,50);
+      }
+    },100);
+    // Fallback: si no hay registroProcesado, todavía permitimos inicializar la UI y esperar a que llegue
+    setTimeout(()=> {
+      if(!document.getElementById("chartsExtraWrapper")) {
+        // still create UI even if registroProcesado null; data update will trigger updateCharts()
+        fn();
+      }
+    }, 3000);
+  }
+
+  // crea la UI extra (si no existe)
+  function ensureUI(){
+    const container = document.getElementById("statsWrapper");
+    if(!container) return;
+    if(document.getElementById("chartsExtraWrapper")) return;
+
+    const wrapper = document.createElement("div");
+    wrapper.id = "chartsExtraWrapper";
+    wrapper.style.marginTop = "12px";
+    wrapper.innerHTML = `
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;">
+        <div style="flex:1;min-width:260px;max-width:420px;background:#fff;padding:10px;border-radius:8px;">
+          <h3>🔵 Distribución por actividad</h3>
+          <canvas id="pieActividades" height="180"></canvas>
+        </div>
+        <div style="flex:1;min-width:320px;max-width:720px;background:#fff;padding:10px;border-radius:8px;">
+          <h3>📅 Tiempo por fecha</h3>
+          <canvas id="barPorFecha" height="160"></canvas>
+        </div>
+        <div style="width:100%;background:#fff;padding:10px;border-radius:8px;">
+          <h3>🔥 Calendario (mapa de calor) — acumulado por día</h3>
+          <div id="heatmapHolder" style="display:flex;gap:10px;flex-wrap:wrap;"></div>
+          <small class="small">Si tienes muchos días, el calendario mostrará un grid mensual.</small>
+        </div>
+      </div>
+    `;
+    container.appendChild(wrapper);
+  }
+
+  // asigna colores por actividad (usa getActivityColor si existe)
+  function colorForActivity(name){
+    if(typeof getActivityColor === "function") return getActivityColor(name);
+    // fallback: hash -> pastel
+    let hash = 0;
+    for(let i=0;i<name.length;i++) hash = name.charCodeAt(i) + ((hash<<5) - hash);
+    const hue = Math.abs(hash) % 360;
+    return `hsl(${hue},70%,60%)`;
+  }
+
+  // construye datasets: suma segundos por actividad (aplica filtro opcional)
+  function aggregateByActivity(sessions, filters){
+    const map = {};
+    sessions.forEach(s=>{
+      // si hay filtros pasados desde readFilters, aplica (simple)
+      if(filters){
+        if(filters.dia && String(s.dia) !== String(filters.dia)) return;
+        if(filters.fecha && s.dateKey !== filters.fecha) return;
+        if(filters.actividad && s.name !== filters.actividad) return;
+        if(filters.week && weekOfDate(s.startTs) !== filters.week) return;
+        if(filters.month && s.startTs && (new Date(s.startTs)).toISOString().slice(0,7) !== filters.month) return;
+        if(filters.year && s.startTs && String((new Date(s.startTs)).getFullYear()) !== filters.year) return;
+      }
+      const name = s.name || "sin nombre";
+      map[name] = (map[name]||0) + (s.durationSec||0);
+    });
+    return map;
+  }
+
+  // suma por fecha (dateKey) -> segundos
+  function aggregateByDate(sessions, filters){
+    const map = {};
+    sessions.forEach(s=>{
+      if(!s.dateKey) return;
+      if(filters){
+        if(filters.actividad && s.name !== filters.actividad) return;
+      }
+      map[s.dateKey] = (map[s.dateKey]||0) + (s.durationSec||0);
+    });
+    // order by date
+    const entries = Object.entries(map).sort((a,b)=> a[0].localeCompare(b[0]));
+    return entries;
+  }
+
+  // genera Heatmap simple (monthly grids). No librerías externas.
+  function renderHeatmap(sessions, parentEl, filters){
+    parentEl.innerHTML = "";
+    // acumula por dateKey
+    const map = {};
+    sessions.forEach(s=>{
+      if(!s.dateKey) return;
+      if(filters){
+        if(filters.actividad && s.name !== filters.actividad) return;
+      }
+      map[s.dateKey] = (map[s.dateKey]||0) + (s.durationSec||0);
+    });
+    // get min/max
+    const dates = Object.keys(map).sort();
+    if(dates.length === 0){
+      parentEl.innerHTML = "<div class='small'>No hay datos para mostrar</div>";
+      return;
+    }
+    const vals = Object.values(map);
+    const min = Math.min(...vals), max = Math.max(...vals);
+    // group by month-year
+    const months = {};
+    dates.forEach(d => {
+      const mon = d.slice(0,7); // YYYY-MM
+      months[mon] = months[mon] || [];
+      months[mon].push(d);
+    });
+    // for each month create a small grid
+    Object.keys(months).sort().forEach(mon => {
+      const days = months[mon];
+      const card = document.createElement("div");
+      card.style.border = "1px solid #eee";
+      card.style.padding = "6px";
+      card.style.borderRadius = "6px";
+      card.style.minWidth = "220px";
+      card.style.flex = "1 0 220px";
+      const title = document.createElement("div");
+      title.style.fontWeight = "600";
+      title.style.marginBottom = "6px";
+      title.textContent = mon;
+      card.appendChild(title);
+      // build week grid: get day-of-week offset for first day
+      const firstDay = new Date(mon + "-01");
+      const lastDay = new Date(firstDay.getFullYear(), firstDay.getMonth()+1, 0);
+      const totalDays = lastDay.getDate();
+      const grid = document.createElement("div");
+      grid.style.display = "grid";
+      grid.style.gridTemplateColumns = "repeat(7,20px)";
+      grid.style.gap = "4px";
+      for(let i=1;i<=totalDays;i++){
+        const day = String(i).padStart(2,"0");
+        const key = `${mon}-${day}`;
+        const sec = map[key] || 0;
+        const el = document.createElement("div");
+        el.title = `${key}: ${secToHHMMSS(sec)}`;
+        el.style.width = "20px";
+        el.style.height = "20px";
+        el.style.borderRadius = "3px";
+        // color scale (from #f0f0f0 to primary)
+        if(sec === 0){
+          el.style.background = "#f5f5f5";
+        } else {
+          const t = (sec - min) / (max - min || 1); // 0..1
+          // use HSL green scale
+          const lightness = 90 - Math.round(t*50); // from 90% to 40%
+          el.style.background = `hsl(140,60%,${lightness}%)`;
+        }
+        grid.appendChild(el);
+      }
+      card.appendChild(grid);
+      parentEl.appendChild(card);
+    });
+  }
+
+  // Chart instances
+  let pieChart = null;
+  let barChart = null;
+
+  // actualizar charts (llamado cuando hay datos o cambian filtros)
+  function updateCharts(){
+    if(typeof registroProcesado === "undefined" || !registroProcesado) return;
+    // leen filtros si existe readFilters()
+    const filters = (typeof readFilters === "function") ? readFilters() : null;
+
+    // 1) Pie by activity (use sessions aggregated)
+    const actMap = aggregateByActivity(registroProcesado.sessions, filters);
+    const labels = Object.keys(actMap);
+    const data = Object.values(actMap);
+    const bg = labels.map(l => colorForActivity(l));
+
+    const pieCtx = document.getElementById("pieActividades");
+    if(pieCtx){
+      if(pieChart) try{ pieChart.destroy(); }catch(e){}
+      pieChart = new Chart(pieCtx, {
+        type: 'pie',
+        data: { labels, datasets: [{ data, backgroundColor: bg }] },
+        options: {
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: function(ctx){
+                  const val = ctx.raw || 0;
+                  return `${ctx.label}: ${secToHHMMSS(val)}`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // 2) Bar/line by date
+    const byDate = aggregateByDate(registroProcesado.sessions, filters);
+    const dateLabels = byDate.map(d=>d[0]);
+    const dateData = byDate.map(d=>d[1]);
+    const barCtx = document.getElementById("barPorFecha");
+    if(barCtx){
+      if(barChart) try{ barChart.destroy(); }catch(e){}
+      barChart = new Chart(barCtx, {
+        type: 'bar',
+        data: {
+          labels: dateLabels,
+          datasets: [{ label: 'Tiempo (HH:MM:SS)', data: dateData }]
+        },
+        options: {
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: function(ctx){
+                  return secToHHMMSS(ctx.raw || 0);
+                }
+              }
+            }
+          },
+          scales: {
+            y: {
+              ticks: {
+                callback: function(val){
+                  // val is in seconds (number), but Chart passes indexes; we'll display HH:MM:SS for ticks roughly
+                  return secToHHMMSS(Number(val));
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // 3) Heatmap calendar
+    const heatHolder = document.getElementById("heatmapHolder");
+    if(heatHolder){
+      renderHeatmap(registroProcesado.sessions, heatHolder, filters);
+    }
+  }
+
+  // hook: when filters change (your code wires selects onchange to rebuild table)
+  // we attach our own listeners to same selects to update charts
+  function attachFilterListeners(){
+    const ids = ["filterDia","filterFecha","filterActividad","filterWeek","filterMonth","filterYear"];
+    ids.forEach(id=>{
+      const el = document.getElementById(id);
+      if(!el) return;
+      // add listener but don't remove existing ones
+      el.addEventListener("change", ()=> {
+        // small debounce
+        setTimeout(()=> updateCharts(),50);
+      });
+    });
+    // also attach refresh button if exists
+    const fr = document.getElementById("refreshStatsBtn");
+    if(fr) fr.addEventListener("click", ()=> setTimeout(()=> updateCharts(),80));
+  }
+
+  // public refresh hook (in case you want to call it)
+  window.updateExtraCharts = updateCharts;
+
+  // init
+  ready(()=>{
+    ensureUI();
+    attachFilterListeners();
+    // initial draw (may be empty)
+    updateCharts();
+    // also watch registroProcesado changes by monkey-patching variable if you want:
+    // We can't reliably intercept reassignment, but renderRegistroEventos calls buildAndRenderTable() and initStatsUI()
+    // so user actions will trigger filters and then our listeners will update the charts.
+  });
+
+})();
+</script>
 
 </body>
 </html>
+
 
 
 
