@@ -461,10 +461,10 @@ window.openSection = function(sectionId){
 
   document.getElementById(sectionId).classList.remove("hidden");
 
-  if(sectionId === "statsGeneral"){
-    import("./estadisticas.js").then(mod => mod.renderStatsGeneral());
-  } else if(sectionId === "registroEventos"){
-    renderRegistroEventos();
+  if(sectionId === "registroEventos"){
+    setTimeout(() => renderRegistroEventos(), 20); 
+}
+
   }
 };
 
@@ -1318,10 +1318,19 @@ function refrescarEstadisticas(){
 }
 
 /*  Eventos  */
-document.getElementById("filterDia").onchange    = refrescarEstadisticas;
-document.getElementById("filterFecha").onchange  = refrescarEstadisticas;
-document.getElementById("filterActividad").onchange = refrescarEstadisticas;
-document.getElementById("refreshStatsBtn").onclick = refrescarEstadisticas;
+setTimeout(() => {
+    const fd = document.getElementById("filterDia");
+    const ff = document.getElementById("filterFecha");
+    const fa = document.getElementById("filterActividad");
+    const fr = document.getElementById("refreshStatsBtn");
+
+    if (fd) fd.onchange = refrescarEstadisticas;
+    if (ff) ff.onchange = refrescarEstadisticas;
+    if (fa) fa.onchange = refrescarEstadisticas;
+    if (fr) fr.onclick = refrescarEstadisticas;
+
+}, 50);
+
 
 /* Auto iniciar cuando procesado esté listo */
 window.addEventListener("registroProcesadoReady", ()=> initStats());
@@ -1390,6 +1399,7 @@ function escapeHtml(unsafe) {
 
 </body>
 </html>
+
 
 
 
