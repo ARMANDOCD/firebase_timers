@@ -785,12 +785,25 @@ function buildAndRenderTable(registro, filters){
     let objetivo = null;
 
 
+    // --- PRIMERO: por timerId (100% exacto)
+    if (ev.timerId && registro.metaByTimerId[ev.timerId]) {
+        const meta = registro.metaByTimerId[ev.timerId];
+        if (meta.targetMin !== undefined && meta.targetMin !== null) {
+            objetivo = Number(meta.targetMin);
+        }
+    }
+
     // --- SEGUNDO: por nombre (unifica actividades repetidas)
-    if (name && registro.objetivoPorNombre[name] !== undefined) {
-    objetivo = Number(registro.objetivoPorNombre[name]);
-} else {
-    objetivo = null;
-}
+    if (objetivo === null && name) {
+        if (registro.objetivoPorNombre[name] !== undefined) {
+            objetivo = Number(registro.objetivoPorNombre[name]);
+        }
+    }
+
+    // --- TERCERO: fallback si el evento tiene target directo
+    if (objetivo === null && ev.target !== undefined && ev.target !== null) {
+        objetivo = Number(ev.target);
+    }
 
     // compute marcaStr
     const marca = ev.endElapsed ?? ev.elapsed ?? null;
@@ -1093,6 +1106,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
