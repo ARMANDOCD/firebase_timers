@@ -834,7 +834,7 @@ function buildAndRenderTable(registro, filters){
   tbody.innerHTML = "";
   filtered.forEach(f=>{
     const tr = document.createElement("tr");
-if(r.nombre){
+if(f.nombre){
   tr.style.backgroundColor = getActivityColor(f.nombre);
 }
 
@@ -1060,6 +1060,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
