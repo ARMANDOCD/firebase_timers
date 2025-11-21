@@ -835,7 +835,7 @@ function buildAndRenderTable(registro, filters){
   filtered.forEach(f=>{
     const tr = document.createElement("tr");
 if(r.nombre){
-  tr.style.backgroundColor = getActivityColor(r.nombre);
+  tr.style.backgroundColor = getActivityColor(f.nombre);
 }
 
     if(f.dia === null) tr.classList.add("no-day");
@@ -1060,6 +1060,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
