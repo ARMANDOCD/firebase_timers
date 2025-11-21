@@ -875,7 +875,7 @@ if(f.nombre){
       <td>${escapeHtml(f.tipo||"")}</td>
       <td>${f.marcaStr || ""}</td>
       <td>${f.timestamp ? formatLocal(f.timestamp) : ""}</td>
-      <td>${objetivo ?? ""}</td>
+      <td>${f.objetivo ?? ""}</td>
       <td>${f.creado? formatLocal(f.creado): ""}</td>
       <td>${f.cumplido? "✔":"✖"}</td>`;
     tbody.appendChild(tr);
@@ -1090,6 +1090,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
