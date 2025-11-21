@@ -303,7 +303,6 @@ textarea { resize: vertical; }
           <th>Fecha y hora</th>
           <th>Objetivo (min)</th>
           <th>Creado</th>
-          <th>Duración (s)</th>
           <th>Cumplido</th>
         </tr>
       </thead>
@@ -827,7 +826,6 @@ if (!matchedSession) {
       timestamp: ts,
       objetivo: objetivoFromName,
       creado: ev.createdAt || ev.timestamp || "",
-      duracion: dur,
       cumplido
     };
   });
@@ -860,7 +858,6 @@ if(f.nombre){
       <td>${f.timestamp ? formatLocal(f.timestamp) : ""}</td>
       <td>${f.objetivo===null||f.objetivo===undefined? "": f.objetivo}</td>
       <td>${f.creado? formatLocal(f.creado): ""}</td>
-      <td>${f.duracion ? formatTimeFromSeconds(f.duracion) : ""}</td>
       <td>${f.cumplido? "✔":"✖"}</td>`;
     tbody.appendChild(tr);
   });
@@ -1074,6 +1071,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
