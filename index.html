@@ -1,183 +1,37 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Proyecto Armando</title>
+<title>Proyecto Armando - Corregido</title>
 
 <style>
-
-  body {
-    font-family: 'Segoe UI', sans-serif;
-    background: #dbdace;
-    color: #a1a1a1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 20px;
-  }
-
-  h1 { margin-bottom: 10px; color: #1a1a1a; }
-
-  .controls { margin-bottom: 20px; }
-
-  button {
-    background: #3b5dd1;
-    border: none;
-    color: #f1f1f1;
-    padding: 8px 14px;
-    margin: 4px;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: background 0.3s;
-  }
-  button:hover { background: #5a7be0; }
-
-  #timers-container {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 15px;
-    width: 90%;
-    max-width: 900px;
-  }
-
-  .timer {
-    background: #1a2f7a;
-    border: 1px solid #333;
-    border-radius: 10px;
-    padding: 10px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-
-  .timer.completed {
-    background: #164d16;
-    border-color: #1d7a1d;
-  }
-
-  .timer p span {
-    font-size: 2rem;
-    font-weight: bold;
-    color: #fff;
-  }
-
-  .timer h3 { margin: 5px 0; }
-  .timer p { margin: 2px 0; }
-
-  .timer .buttons {
-    display: flex;
-    gap: 6px;
-  }
-
-  .draggable { cursor: move; }
-
-  .input-group {
-    display: flex;
-    gap: 5px;
-    flex-wrap: wrap;
-    justify-content: center;
-    margin-top: 8px;
-  }
-
-  input, textarea {
-    padding: 6px;
-    border-radius: 5px;
-    border: 1px solid #555;
-    background: #181818;
-    color: #eee;
-  }
-
-  textarea { resize: vertical; }
-
-  .hidden { display: none !important; }
-
-  #userSection { margin-bottom: 20px; text-align: center; }
-
-  #loginPanel {
-    background: #1c1c1c;
-    padding: 20px;
-    border-radius: 10px;
-    border: 1px solid #333;
-    text-align: center;
-  }
-
-  #loginPanel input {
-    width: 200px;
-    margin: 5px 0;
-  }
-
-  /* ✅ CAMBIO 1: menú alineado a la derecha */
-  #menu {
-    position: fixed;
-    top: 10px;
-    right: 10px;  /* <--- AQUI */
-    left: auto;   /* <--- AQUI */
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-  }
-
-  #dayInfo {
-    margin-bottom: 20px;
-    text-align: center;
-  }
-
-  /* Estilos tabla de registro */
-  #registroTable {
-    width: 95%;
-    max-width: 1100px;
-    border-collapse: collapse;
-    margin-top: 12px;
-    background: #f7f7f7;
-    color: #111;
-    border-radius: 8px;
-    overflow: hidden;
-  }
-  #registroTable thead th {
-    background: #3b5dd1;
-    color: #fff;
-    padding: 10px;
-    text-align: left;
-    font-weight: 600;
-  }
-  #registroTable tbody td {
-    padding: 8px 10px;
-    border-bottom: 1px solid #e0e0e0;
-    font-size: 0.95rem;
-  }
-  .small { font-size: 0.9rem; color:#666; }
-  #registroControls { margin: 10px 0; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-  #registroWrapper { width: 100%; display:flex; flex-direction:column; align-items:center; }
-
-  /* Una fila resaltada para eventos "sin día" */
-  .no-day { background: #fff3cd !important; }
-
+  body { font-family: 'Segoe UI', sans-serif; background: #dbdace; color: #a1a1a1; display:flex; flex-direction:column; align-items:center; padding:20px; }
+  h1 { margin-bottom:10px; color:#1a1a1a; }
+  button { background:#3b5dd1; border:none; color:#f1f1f1; padding:8px 14px; margin:4px; border-radius:6px; cursor:pointer; transition:background .3s; }
+  button:hover{background:#5a7be0;}
+  #timers-container{display:grid; grid-template-columns:repeat(3,1fr); gap:15px; width:90%; max-width:900px;}
+  .timer{background:#1a2f7a; border:1px solid #333; border-radius:10px; padding:10px; display:flex; flex-direction:column; align-items:center;}
+  .hidden{display:none!important;}
+  #registroTable{width:95%; max-width:1100px; border-collapse:collapse; margin-top:12px; background:#f7f7f7; color:#111; border-radius:8px; overflow:hidden;}
+  #registroTable thead th{background:#3b5dd1; color:#fff; padding:10px; text-align:left; font-weight:600;}
+  #registroTable tbody td{padding:8px 10px; border-bottom:1px solid #e0e0e0; font-size:.95rem;}
+  .small{font-size:.9rem;color:#666;}
+  .no-day{background:#fff3cd!important;}
+  #menu{position:fixed; top:10px; right:10px; left:auto; display:flex; flex-direction:column; gap:5px;}
 </style>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-
 <body>
+<h1>Proyecto Armando (corregido)</h1>
 
-<h1>Proyecto Armando</h1>
-
-<!-- 🔵 MENU SUPERIOR -->
 <div id="menu">
   <button onclick="openSection('mainPage')">🏠 Cronómetros</button>
- 
-  <!-- NUEVO BOTÓN -->
   <button onclick="openSection('registroEventos')">📜 Registro de eventos</button>
 </div>
 
-
-<!-- 🔵 SECCIÓN PRINCIPAL -->
 <section id="mainPage">
-
   <div id="dayInfo" class="hidden"></div>
-
-  <!-- LOGIN -->
   <div id="loginPanel">
     <h3>Acceso privado</h3>
     <input type="email" id="emailInput" placeholder="Correo autorizado">
@@ -186,7 +40,6 @@
     <p id="loginError" style="color:#ff5555;"></p>
   </div>
 
-  <!-- Info de usuario -->
   <div id="userSection" class="hidden">
     <p id="userInfo"></p>
     <button id="logoutBtn">Cerrar sesión</button>
@@ -203,70 +56,50 @@
       <input type="text" id="activityName" placeholder="Nombre de la actividad">
       <input type="number" id="targetMinutes" placeholder="Minutos objetivo" min="1">
     </div>
-
     <div class="input-group">
       <textarea id="note" placeholder="Nota (opcional)"></textarea>
     </div>
-
     <button id="createTimerBtn">Crear</button>
   </div>
 
   <div id="timers-container"></div>
-
 </section>
 
-
-
-<!-- 🔵 REGISTRO DE EVENTOS -->
 <section id="registroEventos" class="hidden">
   <h2>📜 Registro de eventos (historial)</h2>
 
-  <!-- === ESTADÍSTICAS INTEGRADAS === -->
-<div id="statsWrapper" style="margin-top:25px; width:90%; max-width:1100px;">
+  <div id="statsWrapper" style="margin-top:25px; width:90%; max-width:1100px;">
+    <h2 style="margin-top:25px;">📈 Estadísticas basadas en el registro</h2>
 
-  <h2 style="margin-top:25px;">📈 Estadísticas basadas en el registro</h2>
+    <div class="card small" style="background:#eef; padding:10px; border-radius:8px;">
+      Datos generados automáticamente a partir del historial de eventos.
+    </div>
 
-  <div class="card small" style="background:#eef; padding:10px; border-radius:8px;">
-    Datos generados automáticamente a partir del historial de eventos.
+    <div class="card" style="padding:10px; background:#fff; border-radius:8px; margin:10px 0;">
+      <h3>Filtros</h3>
+      <select id="filterDia"><option value="">Todos los días</option></select>
+      <select id="filterFecha"><option value="">Todas las fechas</option></select>
+      <select id="filterActividad"><option value="">Todas las actividades</option></select>
+      <button id="refreshStatsBtn">🔁 Actualizar</button>
+      <div id="statsStatus" style="font-size:12px; color:#555; margin-top:5px;"></div>
+    </div>
+
+    <div class="card" style="padding:10px; background:#fff; border-radius:8px; margin:10px 0;">
+      <h3>Resumen</h3>
+      <div id="statsResumen" class="small"></div>
+    </div>
+
+    <div class="card" style="padding:10px; background:#fff; border-radius:8px; margin:10px 0;">
+      <h3>Tiempo por actividad</h3>
+      <canvas id="chartActividades" height="120"></canvas>
+    </div>
+
+    <div class="card" style="padding:10px; background:#fff; border-radius:8px; margin:10px 0;">
+      <h3>Tiempo por día</h3>
+      <canvas id="chartDias" height="120"></canvas>
+    </div>
   </div>
 
-  <div class="card" style="padding:10px; background:#fff; border-radius:8px; margin:10px 0;">
-    <h3>Filtros</h3>
-    <select id="filterDia">
-  <option value="">Todos los días</option>
-</select>
-
-<select id="filterFecha">
-  <option value="">Todas las fechas</option>
-</select>
-
-<select id="filterActividad">
-  <option value="">Todas las actividades</option>
-</select>
-
-    <button id="refreshStatsBtn">🔁 Actualizar</button>
-    <div id="statsStatus" style="font-size:12px; color:#555; margin-top:5px;"></div>
-  </div>
-
-  <div class="card" style="padding:10px; background:#fff; border-radius:8px; margin:10px 0;">
-    <h3>Resumen</h3>
-    <div id="statsResumen" class="small"></div>
-  </div>
-
-  <div class="card" style="padding:10px; background:#fff; border-radius:8px; margin:10px 0;">
-    <h3>Tiempo por actividad</h3>
-    <canvas id="chartActividades" height="120"></canvas>
-  </div>
-
-  <div class="card" style="padding:10px; background:#fff; border-radius:8px; margin:10px 0;">
-    <h3>Tiempo por día</h3>
-    <canvas id="chartDias" height="120"></canvas>
-  </div>
-
-</div>
-
-
-  
   <div id="registroWrapper">
     <div id="registroControls">
       <span class="small">Se muestran eventos sincronizados desde Firebase y asignados a días de trabajo calculados a partir de <b>dia_iniciado</b> / <b>dia_finalizado</b>.</span>
@@ -284,40 +117,25 @@
           <th>Objetivo (min)</th>
           <th>Creado</th>
           <th>Duración</th>
-<th>Cumplido</th>
-
+          <th>Cumplido</th>
         </tr>
       </thead>
-      <tbody id="registroBody">
-        <!-- filas generadas dinámicamente -->
-      </tbody>
+      <tbody id="registroBody"></tbody>
     </table>
   </div>
 </section>
 
-
-
-<!-- 🔵 SCRIPT -->
 <script type="module">
-  let filas = [];
+// ---- variables
+let filas = [];
+let eventosRefGlobal = null;
+let lastEventosListener = null;
+let chartAct = null, chartDia = null;
 
-/* --- FIREBASE (modular v11) --- */
+// Firebase imports
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-import {
-  getDatabase,
-  ref,
-  set,
-  onValue,
-  push,
-  get,
-  child
-} from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
-import {
-  getAuth,
-  signInWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged
-} from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+import { getDatabase, ref, set, onValue, push } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCby9oxzPzBDllkzuW21ZoGNJh67UgYZ8E",
@@ -333,116 +151,74 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const auth = getAuth(app);
 
-
-/* -------- LOGIN -------- */
-
-document.getElementById("loginEmailBtn").onclick = async () => {
-  const email = document.getElementById("emailInput").value;
-  const pass = document.getElementById("passwordInput").value;
-
-  try {
-    await signInWithEmailAndPassword(auth, email, pass);
-  } catch(e){
-    document.getElementById("loginError").textContent="Credenciales incorrectas";
-    console.error(e);
-  }
-};
-
-document.getElementById("logoutBtn").onclick = () => signOut(auth);
-
 let dbRef;
 let timers = [];
 let dayStarted = null;
 let dayEnded = null;
 let currentUid = null;
-
-
-// Para asegurar que "timer completado" solo se loguea una vez por timer por sesión:
 const loggedCompletions = new Set();
 
+// ---- auth
+document.getElementById("loginEmailBtn").onclick = async () => {
+  const email = document.getElementById("emailInput").value;
+  const pass = document.getElementById("passwordInput").value;
+  try { await signInWithEmailAndPassword(auth, email, pass); }
+  catch(e){ document.getElementById("loginError").textContent="Credenciales incorrectas"; console.error(e); }
+};
+document.getElementById("logoutBtn").onclick = () => signOut(auth);
 
+// ---- auth state
 onAuthStateChanged(auth, user => {
   if(user){
     currentUid = user.uid;
-
     document.getElementById("loginPanel").classList.add("hidden");
     document.getElementById("userSection").classList.remove("hidden");
     document.getElementById("mainControls").classList.remove("hidden");
-
     document.getElementById("userInfo").textContent = `Conectado como: ${user.email}`;
-
-    // referencia al diaActual (tu estructura real)
     dbRef = ref(db, `usuarios/${user.uid}/cronometros/diaActual`);
     listen();
-
-    // iniciar escucha del historial de eventos en la sección registro (se activará en renderRegistroEventos)
-    // pero podemos preparar el ref
     eventosRefGlobal = ref(db, `usuarios/${user.uid}/historialEventos`);
-
   } else {
-
     currentUid = null;
     dbRef = null;
-
     document.getElementById("loginPanel").classList.remove("hidden");
     document.getElementById("userSection").classList.add("hidden");
     document.getElementById("mainControls").classList.add("hidden");
-
     timers = [];
     renderTimers();
   }
 });
 
-
-/* -------- CARGA DE DATOS -------- */
-function listen() {
+// ---- listen/free save
+function listen(){
   onValue(dbRef, snap => {
     const data = snap.val() || {};
     timers = data.timers || [];
     dayStarted = data.dayStarted || null;
     dayEnded = data.dayEnded || null;
-    // Resetear loggedCompletions si cambiaste de día (evita duplicados en sesión nueva)
     loggedCompletions.clear();
     renderTimers();
   });
 }
-
-async function save() {
+async function save(){
   if(!dbRef) return;
-  try {
-    await set(dbRef,{
-      timers,
-      dayStarted,
-      dayEnded,
-      updatedAt:new Date().toISOString()
-    });
-  } catch(err) {
-    console.error("Error guardando diaActual:", err);
-  }
+  try{
+    await set(dbRef, { timers, dayStarted, dayEnded, updatedAt:new Date().toISOString() });
+  }catch(e){ console.error("Error guardando:", e); }
 }
 
-
-/* -------- FUNCIÓN DE LOG DE EVENTOS (historial) -------- */
+// ---- log events
 async function logEvento(uid, tipo, dataExtra = {}) {
   if(!uid) return;
   try {
     const eventosRef = ref(db, `usuarios/${uid}/historialEventos`);
-    const evento = {
-      timestamp: new Date().toISOString(),
-      tipo,
-      usuario: uid,
-      ...dataExtra
-    };
+    const evento = { timestamp: new Date().toISOString(), tipo, usuario: uid, ...dataExtra };
     const newRef = push(eventosRef);
     await set(newRef, evento);
-    // no bloqueamos la UI; si quieres usar el resultado, haz await desde el caller
-  } catch (e) {
-    console.error("Error logeando evento:", e, tipo, dataExtra);
-  }
+  } catch(e){ console.error("Error logeando evento:", e); }
 }
 
-
-/* -------- UTILIDADES -------- */
+// ---- utils
 function formatTimeFromSeconds(s){
   if(s == null || s === undefined) return "";
   s = Number(s);
@@ -452,711 +228,505 @@ function formatTimeFromSeconds(s){
   const s2 = String(s%60).padStart(2,"0");
   return `${h}:${m}:${s2}`;
 }
-
 function formatLocal(ts){
-  try {
-    return new Date(ts).toLocaleString();
-  } catch(e){
-    return ts;
-  }
+  try { return new Date(ts).toLocaleString(); } catch(e) { return ts; }
+}
+function escapeHtml(unsafe){
+  if(!unsafe && unsafe !== 0) return "";
+  return String(unsafe).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;");
 }
 
-/* -------- NAV SECTIONS -------- */
+// ---- UI navigation
 window.openSection = function(sectionId){
   document.getElementById("mainPage").classList.add("hidden");
   document.getElementById("registroEventos").classList.add("hidden");
-
   document.getElementById(sectionId).classList.remove("hidden");
-
-  if(sectionId === "registroEventos"){
-    setTimeout(() => renderRegistroEventos(), 20); 
-}
-
-  
+  if(sectionId === "registroEventos") {
+    setTimeout(()=> renderRegistroEventos(), 20);
+  }
 };
 
-
-/* -------- CREAR CRONÓMETRO -------- */
+// ---- timers UI (kept minimal)
 document.getElementById("createTimerBtn").onclick = async () => {
   const n = document.getElementById("activityName").value.trim();
   const t = Number(document.getElementById("targetMinutes").value);
   const note = document.getElementById("note").value.trim();
-
   if(!n || !t) return alert("Nombre y minutos requeridos.");
-
-  // usamos createdAt ISO como timerId único
   const createdAt = new Date().toISOString();
-
-  const newTimer = {
-    name: n,
-    target: t,
-    note,
-    elapsed: 0,
-    running: false,
-    completed: false,
-    createdAt
-  };
-
+  const newTimer = { name:n, target:t, note, elapsed:0, running:false, completed:false, createdAt };
   timers.push(newTimer);
-
   document.getElementById("activityName").value="";
   document.getElementById("targetMinutes").value="";
   document.getElementById("note").value="";
   document.getElementById("formSection").classList.add("hidden");
-
   await save();
-
-  // Log evento: timer creado
-  logEvento(currentUid, "timer_creado", {
-  timerId: createdAt,
-  name: n,
-  targetMin: t,   // <<< nombre estándar
-  note
-});
-
-
+  logEvento(currentUid, "timer_creado", { timerId: createdAt, name: n, targetMin: t, note });
   renderTimers();
 };
-
-
-/* -------- RENDER -------- */
-function renderTimers() {
+function renderTimers(){
   const container = document.getElementById("timers-container");
   container.innerHTML = "";
-
-  const totalTargetSeconds = timers.reduce((sum, t) => sum + t.target * 60, 0);
-  const totalElapsedSeconds = timers.reduce((sum, t) => {
-    let display = t.elapsed;
-    if (t.running && t.startedAt) display += Math.floor((new Date() - new Date(t.startedAt)) / 1000);
+  const totalTargetSeconds = timers.reduce((sum,t)=> sum + (t.target||0)*60, 0);
+  const totalElapsedSeconds = timers.reduce((sum,t)=> {
+    let display = Number(t.elapsed) || 0;
+    if(t.running && t.startedAt) display += Math.floor((new Date() - new Date(t.startedAt)) / 1000);
     return sum + display;
   }, 0);
-
   const dayInfoDiv = document.getElementById("dayInfo");
-
-  if (dayStarted) {
+  if(dayStarted){
     const start = new Date(dayStarted);
-    const estimatedEnd = new Date(start.getTime() + totalTargetSeconds * 1000);
-    const progress = totalElapsedSeconds / totalTargetSeconds * 100 || 0;
-
-    dayInfoDiv.innerHTML = `
-      <p>Día iniciado: ${start.toLocaleString()}</p>
+    const estimatedEnd = new Date(start.getTime() + totalTargetSeconds*1000);
+    const progress = totalTargetSeconds ? totalElapsedSeconds / totalTargetSeconds * 100 : 0;
+    dayInfoDiv.innerHTML = `<p>Día iniciado: ${start.toLocaleString()}</p>
       <p>Hora estimada de fin: ${estimatedEnd.toLocaleString()}</p>
-      <p>Progreso total: ${progress.toFixed(1)}%</p>
-    `;
+      <p>Progreso total: ${progress.toFixed(1)}%</p>`;
     dayInfoDiv.classList.remove("hidden");
-  } else {
-    dayInfoDiv.classList.add("hidden");
-  }
-
-  timers.forEach((t, i) => {
+  } else dayInfoDiv.classList.add("hidden");
+  timers.forEach((t,i)=>{
     const div = document.createElement("div");
     div.className = "timer draggable" + (t.completed ? " completed" : "");
     div.draggable = true;
-
-    // elapsed temporal
-    let displayElapsed = t.elapsed;
-    if (t.running && t.startedAt) {
-      displayElapsed += Math.floor((new Date() - new Date(t.startedAt)) / 1000);
-    }
-
-    const pctObj = ((displayElapsed / (t.target * 60)) * 100).toFixed(1);
-    const pctTotal = ((displayElapsed / totalTargetSeconds) * 100).toFixed(1);
-
-    div.innerHTML = `
-      <h3>${t.name}</h3>
+    let displayElapsed = Number(t.elapsed)||0;
+    if(t.running && t.startedAt) displayElapsed += Math.floor((new Date() - new Date(t.startedAt)) / 1000);
+    const pctObj = t.target ? ((displayElapsed / (t.target*60))*100).toFixed(1) : "0.0";
+    const pctTotal = totalTargetSeconds ? ((displayElapsed / totalTargetSeconds)*100).toFixed(1) : "0.0";
+    div.innerHTML = `<h3>${escapeHtml(t.name)}</h3>
       <p><span>${formatTimeFromSeconds(displayElapsed)}</span></p>
       <p>Objetivo: ${t.target} min</p>
       <p>Progreso específico: ${pctObj}%</p>
       <p>Progreso general: ${pctTotal}%</p>
       <p>Creado: ${new Date(t.createdAt).toLocaleString()}</p>
-      ${t.note ? `<p><i>${t.note}</i></p>` : ""}
+      ${t.note ? `<p><i>${escapeHtml(t.note)}</i></p>` : ""}
       <div class="buttons">
-        <button onclick="toggleTimer(${i})">${t.running?"⏸️ Pausa":"▶️ Iniciar"}</button>
+        <button onclick="toggleTimer(${i})">${t.running? "⏸️ Pausa":"▶️ Iniciar"}</button>
         <button onclick="resetTimer(${i})">🔄 Reset</button>
         <button onclick="deleteTimer(${i})">🗑️ Borrar</button>
         <button onclick="editTimer(${i})">✏️ Editar</button>
-      </div>
-    `;
-
+      </div>`;
     container.appendChild(div);
   });
-
   enableDragAndDrop();
 }
-
-setInterval(async () => {
-  if (!timers || timers.length === 0) return;
+setInterval(async ()=>{
+  if(!timers || timers.length===0) return;
   const now = new Date();
   let needsSave = false;
-
-  timers.forEach(t => {
-    if (t.running && t.startedAt) {
-      // elapsed real hasta ahora
-      const elapsedReal = t.elapsed + Math.floor((now - new Date(t.startedAt)) / 1000);
-
-      // marcar completado si superó objetivo
-      if (!t.completed && elapsedReal >= t.target * 60) {
-        t.completed = true;
-        needsSave = true;
-
-        logEvento(currentUid, "timer_completado", {
-  timerId,
-  name: t.name,
-  endElapsed: elapsedReal
-});
-
+  timers.forEach(t=>{
+    if(t.running && t.startedAt){
+      const elapsedReal = t.elapsed + Math.floor((now - new Date(t.startedAt))/1000);
+      if(!t.completed && t.target && elapsedReal >= t.target*60){
+        t.completed = true; needsSave = true;
+        logEvento(currentUid,"timer_completado",{ timerId: t.createdAt, name: t.name, endElapsed: elapsedReal });
       }
     }
   });
+  if(needsSave) await save();
+  renderTimers();
+},1000);
 
-  if (needsSave) await save();
-
-  renderTimers(); // refresca UI cada segundo
-}, 1000);
-
-
-/* ---------- EDITAR ----------- */
 window.editTimer = async i => {
-  const old = { target: timers[i].target, note: timers[i].note, name: timers[i].name };
   const newTarget = prompt("Nuevo objetivo en minutos:", timers[i].target);
-  if (!newTarget || isNaN(newTarget) || newTarget <= 0) return;
-
+  if(!newTarget || isNaN(newTarget) || newTarget<=0) return;
   timers[i].target = Number(newTarget);
   timers[i].completed = false;
-
   await save();
-
-  // Log cambio
-  logEvento(currentUid, "timer_editado", {
-  timerId: timers[i].createdAt,
-  name: timers[i].name,
-  targetMin: timers[i].target
-});
-
-
+  logEvento(currentUid,"timer_editado",{ timerId: timers[i].createdAt, name: timers[i].name, targetMin: timers[i].target });
   renderTimers();
 };
-
-
-/* -------- TIMERS acciones -------- */
 
 window.toggleTimer = async i => {
-  if (!dayStarted) return alert("Primero inicia el día.");
-  
+  if(!dayStarted) return alert("Primero inicia el día.");
   const t = timers[i];
   const timerId = t.createdAt;
-
-  if (!t.running) {
-    // === iniciar ===
-    t.running = true;
-    t.startedAt = new Date().toISOString();   // 🔥 Se registra el momento exacto del inicio
-    await save();
-
-    logEvento(currentUid, "timer_iniciado", {
-  timerId,
-  name: t.name,
-  startElapsed: t.elapsed
-});
-
-
+  if(!t.running){
+    t.running = true; t.startedAt = new Date().toISOString(); await save();
+    logEvento(currentUid,"timer_iniciado",{ timerId, name: t.name, startElapsed: t.elapsed });
   } else {
-    // === pausar ===
     const nowIso = new Date().toISOString();
-
-    if (t.startedAt) {
-      const deltaSec = Math.floor((new Date(nowIso) - new Date(t.startedAt)) / 1000);
-      t.elapsed += Math.max(0, deltaSec);     // 🔥 Se calcula el tiempo REAL
-      delete t.startedAt;
+    if(t.startedAt){
+      const deltaSec = Math.floor((new Date(nowIso) - new Date(t.startedAt))/1000);
+      t.elapsed += Math.max(0, deltaSec); delete t.startedAt;
     }
-
-    t.running = false;
-    await save();
-
-    logEvento(currentUid, "timer_pausado", {
-  timerId,
-  name: t.name,
-  endElapsed: t.elapsed
-});
-
+    t.running = false; await save();
+    logEvento(currentUid,"timer_pausado",{ timerId, name: t.name, endElapsed: t.elapsed });
   }
-
   renderTimers();
 };
 
-
 window.resetTimer = async i => {
-  const timerId = timers[i].createdAt;
   const prevElapsed = timers[i].elapsed;
-  timers[i].elapsed=0;
-  timers[i].running=false;
-  timers[i].completed=false;
+  const timerId = timers[i].createdAt;
+  timers[i].elapsed = 0; timers[i].running = false; timers[i].completed = false;
   await save();
-
-  logEvento(currentUid, "timer_reseteado", {
-  timerId,
-  name: t.name,
-  prevElapsed: prevElapsed,
-  endElapsed: 0
-});
-
-
+  logEvento(currentUid,"timer_reseteado",{ timerId, name: timers[i].name, prevElapsed, endElapsed:0 });
   renderTimers();
 };
 
 window.deleteTimer = async i => {
   const timer = timers[i];
-  timers.splice(i,1);
-  await save();
-
-  logEvento(currentUid, "timer_borrado", {
-    timerId: timer.createdAt,
-    name: timer.name,
-    target: timer.target,
-    elapsed: timer.elapsed
-  });
-
+  timers.splice(i,1); await save();
+  logEvento(currentUid,"timer_borrado",{ timerId: timer.createdAt, name: timer.name, target: timer.target, elapsed: timer.elapsed });
   renderTimers();
 };
 
-
-/* -------- TICKER: aumenta elapsed cuando running -------- */
-
-/* -------- TICKER: solo refrescar UI -------- */
-
-
-
-
-
-/* -------- DRAG & DROP -------- */
-
-let draggedIndex=null;
-
+let draggedIndex = null;
 function enableDragAndDrop(){
   const container = document.getElementById("timers-container");
   const children = container.querySelectorAll(".timer");
-
   children.forEach(child=>{
-    child.ondragstart = e => {
-      draggedIndex = [...children].indexOf(e.target);
-    };
-
+    child.ondragstart = e => { draggedIndex = [...children].indexOf(e.target); };
     child.ondragover = e => e.preventDefault();
-
     child.ondrop = e => {
       const targetIndex = [...children].indexOf(e.target.closest(".timer"));
-      if(targetIndex === -1 || draggedIndex === null) return;
-
+      if(targetIndex===-1 || draggedIndex===null) return;
       const moved = timers.splice(draggedIndex,1)[0];
       timers.splice(targetIndex,0,moved);
-
-      draggedIndex=null;
-      save();
-      renderTimers();
+      draggedIndex=null; save(); renderTimers();
     };
   });
 }
 
-
-/* -------- DÍA -------- */
-
+// ---- day buttons
 document.getElementById("startDayBtn").onclick = async () => {
   if(dayStarted) return alert("El día ya está iniciado.");
-  dayStarted = new Date().toISOString();
-  dayEnded = null;
-  await save();
-
-  // log inicio de día
-  logEvento(currentUid, "dia_iniciado", {
-    dia: (new Date()).toISOString().slice(0,10),
-    dayStarted
-  });
-
+  dayStarted = new Date().toISOString(); dayEnded = null; await save();
+  logEvento(currentUid,"dia_iniciado",{ dia: (new Date()).toISOString().slice(0,10), dayStarted });
   renderTimers();
 };
-
 document.getElementById("endDayBtn").onclick = async () => {
   if(!dayStarted) return alert("Aún no iniciaste el día.");
   dayEnded = new Date().toISOString();
-
-  // antes de borrar el estado actual, opcional: guardar snapshot del dia en event
-  const snapshot = {
-    dayStarted,
-    dayEnded,
-    timersSnapshot: JSON.parse(JSON.stringify(timers)) // copia
-  };
-
-  // reiniciar estado actual
-  timers.forEach(t=>{
-    t.running=false;
-    t.elapsed=0;
-    t.completed=false;
-  });
-
-  dayStarted = null;
-
-  await save();
-
-  // log finalizacion de dia con snapshot
-  logEvento(currentUid, "dia_finalizado", {
-    dia: (new Date()).toISOString().slice(0,10),
-    ...snapshot
-  });
-
+  const snapshot = { dayStarted, dayEnded, timersSnapshot: JSON.parse(JSON.stringify(timers)) };
+  timers.forEach(t=>{ t.running=false; t.elapsed=0; t.completed=false; });
+  dayStarted = null; await save();
+  logEvento(currentUid,"dia_finalizado",{ dia:(new Date()).toISOString().slice(0,10), ...snapshot });
   renderTimers();
 };
+document.getElementById("addTimerBtn").onclick = () => document.getElementById("formSection").classList.toggle("hidden");
 
-
-document.getElementById("addTimerBtn").onclick = () =>
-  document.getElementById("formSection").classList.toggle("hidden");
-
-
-/* =======================
-   ===== REGISTRO UI =====
-   ======================= */
-
-let eventosRefGlobal = null; // inicializado cuando hay user
-let lastEventosListener = null; // para desconectar si es necesario
+// ---- REGISTRO y ESTADISTICAS (VERSIÓN B) ----
 
 document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEventos();
 
-/**
- * renderRegistroEventos:
- * - lee todos los eventos desde usuarios/{uid}/historialEventos
- * - construye intervalos de días a partir de dia_iniciado/dia_finalizado (en pares)
- * - asigna cada evento a su día correspondiente comparando timestamps
- * - genera la tabla
- */
+function safeToISOStringMaybe(ts){
+  if(!ts) return null;
+  if(typeof ts === "number") return new Date(ts).toISOString();
+  if(typeof ts === "string"){
+    // if already ISO-like, return as-is
+    try { const d = new Date(ts); if(!isNaN(d)) return d.toISOString(); } catch(e){}
+    return ts;
+  }
+  return null;
+}
+
+function processEventosArray(eventosArr){
+  // sanitize: keep only objects
+  const evs = (eventosArr || []).filter(e => e && typeof e === "object");
+  // normalize timestamp to ISO string when possible
+  evs.forEach(e => {
+    if(e.timestamp && typeof e.timestamp === "number") e.timestamp = new Date(e.timestamp).toISOString();
+    // leave string timestamps as-is
+  });
+
+  // timersMeta
+  const timersMeta = {};
+  evs.forEach(ev => {
+    if(ev.tipo === "timer_creado" && ev.timerId){
+      timersMeta[ev.timerId] = { name: ev.name || ev.timerId, target: (ev.target!==undefined?ev.target:null), createdAt: ev.timestamp || null };
+    }
+  });
+
+  // dias pairing
+  const dias = [];
+  const inicios = evs.filter(e => e.tipo === "dia_iniciado").sort((a,b)=> new Date(a.timestamp) - new Date(b.timestamp));
+  const finales = evs.filter(e => e.tipo === "dia_finalizado").sort((a,b)=> new Date(a.timestamp) - new Date(b.timestamp));
+  let usedFinal = new Set();
+  inicios.forEach((ini)=>{
+    const inicioTs = new Date(ini.timestamp);
+    let matched = null;
+    for(let j=0;j<finales.length;j++){
+      if(usedFinal.has(j)) continue;
+      const f = finales[j];
+      const fTs = new Date(f.timestamp);
+      if(fTs >= inicioTs){ matched = f; usedFinal.add(j); break; }
+    }
+    dias.push({ dia: dias.length+1, inicio: ini.timestamp, fin: matched ? matched.timestamp : null, rawInicioEvent: ini, rawFinEvent: matched || null });
+  });
+
+  // helper calcDuracion (simple)
+  function parseMarcaToSec(m){
+    if(m===undefined || m===null) return null;
+    if(typeof m === "number") return Number(m);
+    const s = String(m).trim();
+    if(!s) return null;
+    if(s.includes(":")){
+      const parts = s.split(":").map(x=>Number(x));
+      if(parts.length===3) return parts[0]*3600 + parts[1]*60 + parts[2];
+      if(parts.length===2) return parts[0]*60 + parts[1];
+    }
+    const n = Number(s);
+    return isNaN(n)? null : n;
+  }
+  function calcDuracion(startEv, endEv){
+    const m1 = parseMarcaToSec(startEv && (startEv.startElapsed ?? startEv.elapsed ?? startEv.marca));
+    const m2 = parseMarcaToSec(endEv && (endEv.endElapsed ?? endEv.elapsed ?? endEv.marca));
+    if(m1!==null && m2!==null && m2>=m1) return Math.max(0, Math.floor(m2-m1));
+    try{
+      const st = startEv && startEv.timestamp ? Date.parse(startEv.timestamp) : NaN;
+      const en = endEv && endEv.timestamp ? Date.parse(endEv.timestamp) : NaN;
+      if(!isNaN(st) && !isNaN(en) && en>=st) return Math.max(0, Math.floor((en-st)/1000));
+    }catch(e){}
+    return 0;
+  }
+
+  // build sessions by pairing timer_iniciado with closest closing event
+  const sessions = [];
+  const openMap = {};
+  for(let i=0;i<evs.length;i++){
+    const ev = evs[i];
+    const tipo = ev.tipo; const tid = ev.timerId || null;
+    if(tipo === "timer_iniciado" && tid){ openMap[tid] = ev; continue; }
+    const cierres = ["timer_pausado","timer_reseteado","timer_completado","timer_borrado"];
+    if(tid && cierres.includes(tipo)){
+      const startEv = openMap[tid];
+      if(!startEv) { continue; }
+      // find best end event among next few for same tid
+      let best = ev;
+      let bestScore = -Infinity;
+      for(let j=i; j<Math.min(evs.length, i+12); j++){
+        const cand = evs[j];
+        if(!cand) continue;
+        if(cand.timerId !== tid) continue;
+        if(!cierres.includes(cand.tipo)) continue;
+        const eEl = parseMarcaToSec(cand.endElapsed ?? cand.elapsed ?? cand.marca ?? cand.endElapsed);
+        const ts = cand.timestamp ? Date.parse(cand.timestamp) : 0;
+        let score = 0;
+        if(!isNaN(eEl)) score += eEl*1000;
+        if(!isNaN(ts)) score += Math.floor(ts/1000);
+        const pref = {"timer_pausado":4,"timer_completado":3,"timer_reseteado":2,"timer_borrado":1};
+        score += (pref[cand.tipo]||0);
+        if(score>bestScore){ bestScore=score; best=cand; }
+      }
+      const durationSec = calcDuracion(startEv, best);
+      // determine dia
+      let diaNum = null;
+      try{
+        const st = new Date(startEv.timestamp);
+        for(const d of dias){
+          const s = new Date(d.inicio);
+          const e = d.fin ? new Date(d.fin) : null;
+          if(e){ if(st>=s && st<=e){ diaNum = d.dia; break; } }
+          else { if(st>=s){ diaNum = d.dia; break; } }
+        }
+      }catch(e){}
+      const dateKey = startEv && startEv.timestamp ? (new Date(startEv.timestamp)).toISOString().slice(0,10) : null;
+      const name = startEv.name || (timersMeta[startEv.timerId] && timersMeta[startEv.timerId].name) || startEv.timerId || null;
+      const objetivoMin = (timersMeta[startEv.timerId] && timersMeta[startEv.timerId].target !== undefined) ? Number(timersMeta[startEv.timerId].target) : (startEv.target !== undefined ? Number(startEv.target) : null);
+      sessions.push({
+        timerId: tid,
+        name,
+        startTs: startEv.timestamp,
+        endTs: best.timestamp || null,
+        startElapsed: startEv.startElapsed ?? startEv.elapsed ?? null,
+        endElapsed: best.endElapsed ?? best.elapsed ?? null,
+        durationSec,
+        dia: diaNum,
+        dateKey,
+        objetivoMin,
+        closingType: best.tipo || tipo
+      });
+      delete openMap[tid];
+    }
+  }
+  // close open ones by day end or now
+  const nowIso = new Date().toISOString();
+  Object.keys(openMap).forEach(tid=>{
+    const startEv = openMap[tid];
+    let closed=false;
+    for(const d of dias){
+      const s = new Date(d.inicio); const e = d.fin ? new Date(d.fin) : null;
+      const st = new Date(startEv.timestamp);
+      if(e && st>=s && st<=e){
+        const fakeEnd = { timestamp: d.fin, tipo: "auto_cierre_por_day_end" };
+        const durationSec = calcDuracion(startEv, fakeEnd);
+        sessions.push({ timerId: tid, name: startEv.name||null, startTs: startEv.timestamp, endTs: d.fin, startElapsed: startEv.startElapsed??null, endElapsed:null, durationSec, dia: d.dia, dateKey: (new Date(startEv.timestamp)).toISOString().slice(0,10), objetivoMin: (timersMeta[tid] && timersMeta[tid].target!==undefined)?Number(timersMeta[tid].target):null, closingType:"auto_cierre_por_day_end"});
+        closed=true; break;
+      }
+    }
+    if(!closed){
+      const fakeEnd = { timestamp: nowIso, tipo: "auto_cierre_por_now" };
+      const durationSec = calcDuracion(startEv, fakeEnd);
+      sessions.push({ timerId: tid, name: startEv.name||null, startTs: startEv.timestamp, endTs: nowIso, startElapsed: startEv.startElapsed??null, endElapsed:null, durationSec, dia:null, dateKey:(new Date(startEv.timestamp)).toISOString().slice(0,10), objetivoMin:(timersMeta[tid] && timersMeta[tid].target!==undefined)?Number(timersMeta[tid].target):null, closingType:"auto_cierre_por_now" });
+    }
+  });
+
+  // finalize timersMeta copy
+  const finalTimersMeta = Object.assign({}, timersMeta);
+  // expose
+  return { dias: dias.map(d=>({dia:d.dia,inicio:d.inicio,fin:d.fin||null})), sessions, timersMeta: finalTimersMeta, rawEvents: evs };
+}
+
+// init stats and filters
+function initStats(){
+  if(!window.registroProcesado) return;
+  const reg = window.registroProcesado;
+  const fd = document.getElementById("filterDia");
+  const ff = document.getElementById("filterFecha");
+  const fa = document.getElementById("filterActividad");
+  fd.innerHTML = `<option value="">Todos los días</option>`;
+  ff.innerHTML = `<option value="">Todas las fechas</option>`;
+  fa.innerHTML = `<option value="">Todas las actividades</option>`;
+  reg.dias.sort((a,b)=>a.dia-b.dia).forEach(d=> fd.innerHTML += `<option value="${d.dia}">Día ${d.dia}</option>`);
+  const fechas = [...new Set(reg.sessions.map(s=>s.dateKey).filter(x=>x))].sort();
+  fechas.forEach(f=> ff.innerHTML += `<option value="${f}">${f}</option>`);
+  const acts = [...new Set(reg.sessions.map(s=>s.name).filter(x=>x))].sort();
+  acts.forEach(a=> fa.innerHTML += `<option value="${a}">${a}</option>`);
+  refrescarEstadisticas();
+}
+
+function filtrarStats(){
+  const registro = window.registroProcesado;
+  const d = document.getElementById("filterDia").value;
+  const f = document.getElementById("filterFecha").value;
+  const a = document.getElementById("filterActividad").value;
+  return registro.sessions.filter(s=>{
+    if(d && String(s.dia)!==d) return false;
+    if(f && s.dateKey!==f) return false;
+    if(a && s.name!==a) return false;
+    return true;
+  }).sort((x,y)=> new Date(x.startTs) - new Date(y.startTs));
+}
+
+function fmt(s){ const h=Math.floor(s/3600); const m=Math.floor((s%3600)/60); const se=s%60; return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(se).padStart(2,'0')}`; }
+
+function refrescarEstadisticas(){
+  const lista = filtrarStats();
+  document.getElementById("statsStatus").innerText = `Mostrando ${lista.length} sesiones`;
+  const total = lista.reduce((a,b)=>a + (b.durationSec||0),0);
+  document.getElementById("statsResumen").innerHTML = `<p><b>Tiempo total:</b> ${fmt(total)}</p><p><b>Días afectados:</b> ${[...new Set(lista.map(s=>s.dia).filter(x=>x!=null))].length}</p>`;
+  const act = {};
+  lista.forEach(s => act[s.name] = (act[s.name]||0) + (s.durationSec||0));
+  if(chartAct) try{ chartAct.destroy(); }catch(e){}
+  chartAct = new Chart(document.getElementById("chartActividades"), { type:"bar", data:{ labels:Object.keys(act), datasets:[{ label:"segundos", data:Object.values(act)}] } });
+  const dia = {};
+  lista.forEach(s=> { if(s.dia!==null && s.dia!==undefined) dia[s.dia] = (dia[s.dia]||0) + (s.durationSec||0); });
+  if(chartDia) try{ chartDia.destroy(); }catch(e){}
+  chartDia = new Chart(document.getElementById("chartDias"), { type:"line", data:{ labels:Object.keys(dia).map(d=>"Día "+d), datasets:[{label:"segundos", data:Object.values(dia), tension:0.25}] } });
+}
+
+// wire filter events
+setTimeout(()=>{
+  const fd = document.getElementById("filterDia");
+  const ff = document.getElementById("filterFecha");
+  const fa = document.getElementById("filterActividad");
+  const fr = document.getElementById("refreshStatsBtn");
+  if(fd) fd.onchange = refrescarEstadisticas;
+  if(ff) ff.onchange = refrescarEstadisticas;
+  if(fa) fa.onchange = refrescarEstadisticas;
+  if(fr) fr.onclick = refrescarEstadisticas;
+},50);
+
+// listen for processed registro
+window.addEventListener("registroProcesadoReady", ()=> initStats());
+
+// ---- renderRegistroEventos: reads from Firebase and renders table + triggers processing
 async function renderRegistroEventos(){
-
-  if(!currentUid){
-    alert("Inicia sesión para ver el registro de eventos.");
-    return;
-  }
-
-  // referencia al historial completo
+  if(!currentUid){ alert("Inicia sesión para ver el registro de eventos."); return; }
   const eventosRef = ref(db, `usuarios/${currentUid}/historialEventos`);
-
-  // Escucha en tiempo real y re-render cada vez que cambie
   if(lastEventosListener){
-    // no hay handle de "off" fácil con onValue si no lo guardamos, pero onValue devuelve función de cancelación: 
-    // en modular v11 onValue devuelve función de unsubscribe
-    lastEventosListener(); // desconecta la escucha anterior
-    lastEventosListener = null;
+    lastEventosListener(); lastEventosListener = null;
   }
-
   lastEventosListener = onValue(eventosRef, snap => {
     const raw = snap.val() || {};
-    // raw tiene keys pushId: eventoObject
     const eventosArr = Object.entries(raw).map(([key,val]) => ({ id:key, ...val }));
-    // ordenar por timestamp asc
-    eventosArr.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-    // construir mapa por timerId de metadatos (creado, objetivo, creadoAt)
-    const timersMeta = {}; // timerId -> { name, target, createdAt (timestamp string) }
-    eventosArr.forEach(ev => {
-      if(ev.tipo === "timer_creado" && ev.timerId){
-        // en timer_creado guardaste timerId == createdAt ISO; timestamp del evento es cuando lo creó
-        timersMeta[ev.timerId] = {
-          name: ev.name || ev.timerId,
-          target: ev.target || null,
-          createdAt: ev.timestamp // la fecha/hora del evento de creación
-        };
-      }
+    // sort robustly by timestamp if exists
+    eventosArr.sort((a,b)=>{
+      const ta = a && a.timestamp ? Date.parse(a.timestamp) : 0;
+      const tb = b && b.timestamp ? Date.parse(b.timestamp) : 0;
+      return ta - tb;
     });
 
-    // extraer eventos dia_iniciado/dia_finalizado y emparejarlos
-    const dias = [];
-    const inicios = eventosArr.filter(e => e.tipo === "dia_iniciado");
-    const finales = eventosArr.filter(e => e.tipo === "dia_finalizado");
-
-    // Pairing: supones que vienen en orden y siempre pares (salvo un inicio sin final si día en marcha)
-    // Recorremos los inicios y buscamos el siguiente final cuyo timestamp sea posterior
-    let usedFinalIndexes = new Set();
-    inicios.forEach((inicio, idx) => {
-      // buscar primera final cuyo timestamp sea >= inicio.timestamp y que no haya sido usada
-      const inicioTs = new Date(inicio.timestamp);
-      let matchedFinal = null;
-      for(let j=0;j<finales.length;j++){
-        if(usedFinalIndexes.has(j)) continue;
-        const f = finales[j];
-        const fTs = new Date(f.timestamp);
-        if(fTs >= inicioTs){
-          matchedFinal = { event: f, index: j };
-          usedFinalIndexes.add(j);
-          break;
-        }
-      }
-      dias.push({
-        dia: dias.length + 1, // numeración creciente
-        inicio: inicio.timestamp,
-        fin: matchedFinal ? matchedFinal.event.timestamp : null,
-        rawInicioEvent: inicio,
-        rawFinEvent: matchedFinal ? matchedFinal.event : null
-      });
-    });
-
-    // Si hay finales que quedaron sin emparejar (caso raro según tu confirmación), los ignoramos
-    // Construir función para asignar un evento a un día, buscando dentro de 'dias'
-    function findDiaForTimestamp(ts){
-      const t = new Date(ts);
-      for(const d of dias){
-        const start = new Date(d.inicio);
-        const end = d.fin ? new Date(d.fin) : null;
-        if(end){
-          if(t >= start && t <= end) return d.dia;
-        } else {
-          // día en curso: t >= start
-          if(t >= start) return d.dia;
-        }
-      }
-      return null; // sin día asignado
-    }
-
-    // Filtrar solo eventos relacionados con cronómetros (o mantener todos pero marcaremos)
-    const eventosTimers = eventosArr.filter(e =>
-      e.tipo.startsWith("timer_") || e.tipo === "timer_creado" || e.tipo === "timer_editado" || e.tipo === "timer_borrado"
-    );
-
-    // Si quieres incluir también otros tipos (ej dia_iniciado/dia_finalizado) en la tabla, agrega:
-    // const eventosParaTabla = eventosArr; // pero abajo uso eventosTimers
-
-    // Para mostrar en la tabla usaremos eventosArr que contenga tanto timer events como (opcional) dia events.
-    const eventosParaTabla = eventosArr; // incluir todo, luego filtramos visualmente
-
-    // Preparamos filas
-    filas = eventosParaTabla.map(ev => {
-      // Determinar día
-      const dia = findDiaForTimestamp(ev.timestamp);
-
-      // Intentar obtener timerId y metadata
-      const timerId = ev.timerId || (ev.timerId === undefined ? null : ev.timerId);
-      const meta = timerId && timersMeta[timerId] ? timersMeta[timerId] : null;
-
-      // Marca/elapsed: distintos nombres en dataExtra: elapsed, elapsedAntes, prevElapsed
-      let elapsedSec = null;
-      if(ev.elapsed !== undefined && ev.elapsed !== null) elapsedSec = ev.elapsed;
-      else if(ev.elapsedAntes !== undefined && ev.elapsedAntes !== null) elapsedSec = ev.elapsedAntes;
-      else if(ev.prevElapsed !== undefined && ev.prevElapsed !== null) elapsedSec = ev.prevElapsed;
-
-      // objetivo (en minutos)
-      const objetivo = meta ? meta.target : (ev.target || null);
-
-      // nombre cronómetro: preferir ev.name (algunos eventos incluyen name), sino meta.name, sino timerId
-      const nombre = ev.name || (meta ? meta.name : (timerId || ""));
-
+    // Build filas for table (include all events that are objects)
+    filas = eventosArr.map(ev => {
+      const ts = ev.timestamp !== undefined ? (typeof ev.timestamp === 'number' ? new Date(ev.timestamp).toISOString() : ev.timestamp) : null;
+      const dia = (function(){
+        try {
+          const d = new Date(ts);
+          return isNaN(d) ? null : null;
+        } catch(e){ return null; }
+      })();
+      const timerId = ev.timerId || null;
       return {
-        id: ev.id || `${ev.tipo}-${ev.timestamp}`,
-        dia,
+        id: ev.id || `${ev.tipo}-${ts}`,
+        dia: null, // will be filled by sessions processing
         tipo: ev.tipo,
-        nombre,
-        marca: elapsedSec,
-        marcaStr: formatTimeFromSeconds(elapsedSec),
-        timestamp: ev.timestamp,
-        objetivo,
-        creado: meta ? meta.createdAt : (ev.createdAt || ""),
-        raw: ev
+        nombre: ev.name || (timerId || ""),
+        marca: ev.elapsed ?? ev.endElapsed ?? null,
+        marcaStr: (ev.elapsed||ev.endElapsed) ? formatTimeFromSeconds(Number(ev.elapsed||ev.endElapsed)) : "",
+        timestamp: ts,
+        objetivo: ev.target ?? null,
+        creado: ev.createdAt || ev.timestamp || "",
+        duracion: ev.durationSec || null,
+        cumplido: ev.tipo === "timer_completado"
       };
     });
 
-    // ordenar filas por timestamp asc
-    filas.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+    // process events to sessions/dias
+    const registro = processEventosArray(eventosArr);
+    window.registroProcesado = registro;
+    window.dispatchEvent(new CustomEvent('registroProcesadoReady',{ detail: registro }));
 
+    // update filas' dia and duración if possible using sessions map
+    const sessionByStart = {};
+    registro.sessions.forEach(s=>{
+      const key = s.startTs;
+      if(key) sessionByStart[key] = s;
+    });
+    filas = filas.map(f=>{
+      // try match by timestamp equal to session.startTs, else keep
+      if(f.timestamp && sessionByStart[f.timestamp]){
+        f.dia = sessionByStart[f.timestamp].dia;
+        f.duracion = sessionByStart[f.timestamp].durationSec;
+        f.cumplido = sessionByStart[f.timestamp].durationSec >= (sessionByStart[f.timestamp].objetivoMin?sessionByStart[f.timestamp].objetivoMin*60:0);
+      } else {
+        // leave dia null
+      }
+      return f;
+    });
 
-
-
-
-
-    
-    // RENDER TABLA
+    // render table
     const tbody = document.getElementById("registroBody");
     tbody.innerHTML = "";
-
     filas.forEach(f => {
       const tr = document.createElement("tr");
       if(f.dia === null) tr.classList.add("no-day");
-
-      tr.innerHTML = `
-        <td>${f.dia === null ? "<i>sin día asignado</i>" : f.dia}</td>
+      tr.innerHTML = `<td>${f.dia === null ? "<i>sin día asignado</i>" : f.dia}</td>
         <td>${escapeHtml(f.nombre || "")}</td>
-        <td>${escapeHtml(f.tipo)}</td>
+        <td>${escapeHtml(f.tipo || "")}</td>
         <td>${f.marcaStr || ""}</td>
-        <td>${formatLocal(f.timestamp)}</td>
+        <td>${f.timestamp ? formatLocal(f.timestamp) : ""}</td>
         <td>${f.objetivo === null || f.objetivo === undefined ? "" : f.objetivo}</td>
         <td>${f.creado ? formatLocal(f.creado) : ""}</td>
         <td>${f.duracion ? formatTimeFromSeconds(f.duracion) : ""}</td>
-<td>${f.cumplido ? "✔" : "✖"}</td>
-      `;
+        <td>${f.cumplido ? "✔" : "✖"}</td>`;
       tbody.appendChild(tr);
-
-       actualizarFiltros();
     });
 
-    // Si no hay días detectados, mostrar nota
-    if(dias.length === 0){
-      // opción: mostrar alerta o mensaje en la UI (aquí agregamos una fila)
+    // if no dias, show note
+    if(registro.dias.length === 0){
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td colspan="7" class="small">No se detectaron pares dia_iniciado / dia_finalizado. Si existe un día en curso, aparecerá como 'en curso' (fin vacío).</td>`;
+      tr.innerHTML = `<td colspan="9" class="small">No se detectaron pares dia_iniciado / dia_finalizado. Si existe un día en curso, aparecerá como 'en curso' (fin vacío).</td>`;
       tbody.prepend(tr);
     }
 
-  }); // onValue
-
-function actualizarFiltros() {
-    const selDia = document.getElementById("filterDia");
-    const selFecha = document.getElementById("filterFecha");
-    const selAct = document.getElementById("filterActividad");
-
-    const dias = new Set();
-    const fechas = new Set();
-    const actividades = new Set();
-
-    filas.forEach(f => {
-        if (f.dia) dias.add(f.dia);
-        if (f.timestamp) fechas.add(f.timestamp.slice(0, 10));
-        if (f.nombre) actividades.add(f.nombre);
-    });
-
-    // limpiar
-    selDia.innerHTML = `<option value="">Todos los días</option>`;
-    selFecha.innerHTML = `<option value="">Todas las fechas</option>`;
-    selAct.innerHTML = `<option value="">Todas las actividades</option>`;
-
-    // llenar
-    dias.forEach(d => {
-        selDia.innerHTML += `<option value="${d}">Día ${d}</option>`;
-    });
-
-    fechas.forEach(f => {
-        selFecha.innerHTML += `<option value="${f}">${f}</option>`;
-    });
-
-    actividades.forEach(a => {
-        selAct.innerHTML += `<option value="${a}">${a}</option>`;
-    });
+    // initialize stats and filters now (safe)
+    initStats();
+  });
 }
 
-
-  
-} // renderRegistroEventos
-
-// utilidad mínima para escapar HTML en nombres/strings
-function escapeHtml(unsafe) {
-  if(!unsafe && unsafe !== 0) return "";
-  return String(unsafe)
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-
-/* ===========================
-   ====== FIN registro UI =====
-   =========================== */
+// initial call to renderRegistroEventos is triggered when user opens section
+// helper: refresh stats btn wired above
 
 </script>
-
- 
-<!-- Conexión al archivo externo de estadísticas -->
-
-
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
