@@ -781,20 +781,19 @@ function buildAndRenderTable(registro, filters){
     // try attach session data when event is the closing event (match by timestamp == session.startTs or event.tipo is a closing and timestamp equals session end)
     let matchedSession = null;
 
+// MATCH 1 — cerrado EXACTO (evento final)
+matchedSession = registro.sessions.find(
+    s => s.endTs && ev.timestamp && s.endTs === ev.timestamp
+);
 
-// 1. intento exacto por startTs
-if (sessionByStart[ev.timestamp]) {
-    matchedSession = sessionByStart[ev.timestamp];
-}
-
-// 2. intento exacto por endTs
+// MATCH 2 — si evento es INICIO, entonces usa startTs
 if (!matchedSession) {
     matchedSession = registro.sessions.find(
-        s => s.endTs && ev.timestamp && s.endTs === ev.timestamp
+        s => s.startTs && ev.timestamp && s.startTs === ev.timestamp
     );
 }
 
-// 3. intento por rango (la solución REAL)
+// MATCH 3 — por rango (si el evento cae dentro de la sesión)
 if (!matchedSession) {
     const evTime = ev.timestamp ? Date.parse(ev.timestamp) : null;
     if (evTime) {
@@ -802,10 +801,11 @@ if (!matchedSession) {
             if (!s.startTs || !s.endTs) return false;
             const st = Date.parse(s.startTs);
             const en = Date.parse(s.endTs);
-            return evTime >= st && evTime <= en && s.closingType === ev.tipo;
+            return evTime >= st && evTime <= en;
         });
     }
 }
+
 
     const dur = matchedSession ? matchedSession.durationSec : null;
     const cumplido = (()=> {
@@ -1074,6 +1074,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
