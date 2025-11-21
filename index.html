@@ -19,6 +19,30 @@ body {
   padding: 20px;
 }
 
+#dayHeader {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  padding: 15px;
+  border-radius: 10px;
+  width: 90%;
+  max-width: 700px;
+  color: #ddd;
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+#dayHeader h2 {
+  margin-bottom: 8px;
+  color: #fff;
+  font-size: 1.4rem;
+}
+
+#dayHeader p {
+  margin: 4px 0;
+  font-size: 1rem;
+}
+
+   
 button {
   background: #3b5dd1;
   border: none;
@@ -166,7 +190,14 @@ textarea { resize: vertical; }
 
 
 <body>
-<h1>Proyecto Armando (reparado)</h1>
+<h1>Proyecto Armando</h1>
+
+   <div id="dayHeader" class="hidden">
+  <h2 id="dayStartLabel"></h2>
+  <p id="dayEstimation"></p>
+  <p id="dayProgress"></p>
+</div>
+
 
 <div id="menu">
   <button onclick="openSection('mainPage')">🏠 Cronómetros</button>
@@ -412,6 +443,7 @@ document.getElementById("createTimerBtn").onclick = async () => {
   await save();
   logEvento(currentUid, "timer_creado", { timerId: createdAt, name: n, targetMin: t, note });
   renderTimers();
+   updateDayHeader();
 };
 function renderTimers(){
   const container = document.getElementById("timers-container");
@@ -472,6 +504,7 @@ setInterval(async ()=>{
   });
   if(needsSave) await save();
   renderTimers();
+   updateDayHeader();
 },1000);
 
 window.editTimer = async i => {
@@ -484,6 +517,7 @@ window.editTimer = async i => {
   renderTimers();
 };
 
+ 
 window.toggleTimer = async i => {
   if(!dayStarted) return alert("Primero inicia el día.");
   const t = timers[i];
@@ -542,6 +576,7 @@ document.getElementById("startDayBtn").onclick = async () => {
   dayStarted = new Date().toISOString(); dayEnded = null; await save();
   logEvento(currentUid,"dia_iniciado",{ dia: (new Date()).toISOString().slice(0,10), dayStarted });
   renderTimers();
+    updateDayHeader();
 };
 document.getElementById("endDayBtn").onclick = async () => {
   if(!dayStarted) return alert("Aún no iniciaste el día.");
@@ -961,6 +996,47 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </script>
 
+   <script>
+  function updateDayHeader() {
+  if (!window.currentDayStart) return;
+
+  const timers = window.timers || [];
+
+  const totalObjetivo = timers.reduce((acc, t) => acc + (t.target * 60), 0);
+  const totalActual = timers.reduce((acc, t) => acc + t.elapsed, 0);
+
+  // Fecha/hora del inicio
+  const startDate = new Date(window.currentDayStart);
+  const inicioStr = startDate.toLocaleString();
+
+  // Hora estimada de término
+  let estimadoStr = "—";
+  if (totalObjetivo > 0) {
+    const estimadoFin = new Date(startDate.getTime() + totalObjetivo * 1000);
+    estimadoStr = estimadoFin.toLocaleTimeString();
+  }
+
+  // Porcentaje de avance
+  const progreso = totalObjetivo > 0
+    ? ((totalActual / totalObjetivo) * 100).toFixed(1)
+    : "0";
+
+  // Escribir datos
+  document.getElementById("dayStartLabel").textContent =
+    "Día iniciado: " + inicioStr;
+
+  document.getElementById("dayEstimation").textContent =
+    "Hora estimada de término: " + estimadoStr;
+
+  document.getElementById("dayProgress").textContent =
+    "Avance: " + progreso + "%";
+
+  document.getElementById("dayHeader").classList.remove("hidden");
+}
+
+</script>
+
 </body>
 </html>
+
 
