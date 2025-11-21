@@ -821,6 +821,8 @@ function buildAndRenderTable(registro, filters){
 
     // compute marcaStr
     const marca = ev.endElapsed ?? ev.elapsed ?? null;
+     const targetSec = (objetivo != null) ? Number(objetivo) * 60 : null;
+
     const marcaStr =
       marca !== null ? formatTimeFromSeconds(Number(marca)) : "";
 
@@ -854,15 +856,11 @@ function buildAndRenderTable(registro, filters){
 
     const dur = matchedSession ? matchedSession.durationSec : null;
 
-    const cumplido = (() => {
-      const objMin = objetivo;
-      if (objMin === null || objMin === undefined) return false;
-      const targetSec = Number(objMin) * 60;
-      if (dur !== null && dur !== undefined) return dur >= targetSec;
-      if (marca !== null && !isNaN(Number(marca)))
-        return Number(marca) >= targetSec;
-      return false;
-    })();
+    const cumplido =
+    (marca != null && targetSec != null)
+        ? Number(marca) >= targetSec
+        : false;
+
 
     return {
       id: ev.id || ev.tipo + "-" + (ev.timestamp || Math.random()),
@@ -926,7 +924,7 @@ if(f.nombre){
       <td>${escapeHtml(f.tipo||"")}</td>
       <td>${f.marcaStr || ""}</td>
       <td>${f.timestamp ? formatLocal(f.timestamp) : ""}</td>
-      <td>${f.objetivo ?? ""}</td>
+      <td>${f.objetivo != null ? formatTimeFromSeconds(f.objetivo * 60) : ""}</td>
       <td>${f.creado? formatLocal(f.creado): ""}</td>
       <td>${f.cumplido? "✔":"✖"}</td>`;
     tbody.appendChild(tr);
@@ -1141,6 +1139,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
