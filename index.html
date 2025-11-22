@@ -977,6 +977,27 @@ function weekOfDate(isoTs){
   return `${d.getUTCFullYear()}-W${String(weekNumber).padStart(2,'0')}`;
 }
 
+
+   function getMaxMarcaPorActividadYFecha(filas) {
+    const mapa = {}; 
+    // key: actividad|fecha → valor: marca más alta
+
+    filas.forEach(f => {
+        if (!f.nombre || !f.timestamp) return;
+        const fecha = f.timestamp.slice(0,10);
+        const key = f.nombre + "|" + fecha;
+
+        const marca = Number(f.marca) || 0;
+
+        if (!mapa[key] || marca > mapa[key]) {
+            mapa[key] = marca;
+        }
+    });
+
+    return mapa;  // devuelve { "Correr|2024-11-01": 72000 , ... }
+}
+
+
 // init stats UI
 function initStatsUI(){
   if(!registroProcesado) return;
@@ -1046,22 +1067,28 @@ function readFilters(){
 function refrescarEstadisticas() {
     if (!filasFiltradas) return;
 
-    // Total de tiempo
-    const totalSec = filasFiltradas.reduce((acc, f) => {
-        if (f.marca != null) return acc + Number(f.marca);
-        return acc;
-    }, 0);
+    // ---- NORMALIZACIÓN ----
+    // Agrupar por actividad+fecha y tomar únicamente la marca mayor
+    const mapa = getMaxMarcaPorActividadYFecha(filasFiltradas);
+
+    // Convertimos ese mapa en un arreglo útil
+    const items = Object.entries(mapa).map(([key, sec]) => {
+        const [actividad, fecha] = key.split("|");
+        return { actividad, fecha, sec };
+    });
+
+    // ---- TOTAL DE TIEMPO ----
+    const totalSec = items.reduce((acc, x) => acc + x.sec, 0);
 
     document.getElementById("statsResumen").innerHTML = `
         <p><b>Tiempo total:</b> ${formatTimeFromSeconds(totalSec)}</p>
         <p><b>Días con datos:</b> ${new Set(filasFiltradas.map(f => f.dia).filter(x => x != null)).size}</p>
     `;
 
-    // ---- ACTIVIDAD ----
+    // ---- TIEMPO POR ACTIVIDAD ----
     const act = {};
-    filasFiltradas.forEach(f => {
-        if (!act[f.nombre]) act[f.nombre] = 0;
-        if (f.marca != null) act[f.nombre] += Number(f.marca);
+    items.forEach(x => {
+        act[x.actividad] = (act[x.actividad] || 0) + x.sec;
     });
 
     if (chartAct) chartAct.destroy();
@@ -1076,11 +1103,14 @@ function refrescarEstadisticas() {
         }
     });
 
-    // ---- DÍAS ----
+    // ---- TIEMPO POR DÍA ----
     const dias = {};
-    filasFiltradas.forEach(f => {
-        if (!dias[f.dia]) dias[f.dia] = 0;
-        if (f.marca != null) dias[f.dia] += Number(f.marca);
+    items.forEach(x => {
+        // localizar qué "día" pertenece la fecha
+        const fila = filasFiltradas.find(f => f.timestamp.startsWith(x.fecha));
+        if (!fila || fila.dia == null) return;
+
+        dias[fila.dia] = (dias[fila.dia] || 0) + x.sec;
     });
 
     if (chartDia) chartDia.destroy();
@@ -1096,6 +1126,7 @@ function refrescarEstadisticas() {
         }
     });
 }
+
 
 
 // wire filters events
@@ -1200,22 +1231,18 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
     return `hsl(${hue},70%,60%)`;
   }
 
-  function aggregateByActivity(sessions, filters){
-    const map = {};
-    sessions.forEach(s=>{
-      if(filters){
-        if(filters.dia && String(s.dia) !== String(filters.dia)) return;
-        if(filters.fecha && s.dateKey !== filters.fecha) return;
-        if(filters.actividad && s.name !== filters.actividad) return;
-        if(filters.week && weekOfDate(s.startTs) !== filters.week) return;
-        if(filters.month && s.startTs && (new Date(s.startTs)).toISOString().slice(0,7) !== filters.month) return;
-        if(filters.year && s.startTs && String((new Date(s.startTs)).getFullYear()) !== filters.year) return;
-      }
-      const name = s.name || "sin nombre";
-      map[name] = (map[name]||0) + (s.durationSec||0);
+  function aggregateByDate(filas) {
+    const mapa = getMaxMarcaPorActividadYFecha(filas);
+    const fechas = {};
+
+    Object.entries(mapa).forEach(([key, sec]) => {
+        const [, fecha] = key.split("|");
+        fechas[fecha] = (fechas[fecha] || 0) + sec;
     });
-    return map;
-  }
+
+    return Object.entries(fechas).sort((a,b)=> a[0].localeCompare(b[0]));
+}
+
 
   function aggregateByDate(sessions, filters){
     const map = {};
@@ -1230,32 +1257,31 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
     return Object.entries(map).sort((a,b)=> a[0].localeCompare(b[0]));
   }
 
-  function renderHeatmap(sessions, parentEl, filters){
+  function renderHeatmap(filas, parentEl) {
     parentEl.innerHTML = "";
-    const map = {};
 
-    sessions.forEach(s=>{
-      if(!s.dateKey) return;
-      if(filters){
-        if(filters.actividad && s.name !== filters.actividad) return;
-      }
-      map[s.dateKey] = (map[s.dateKey]||0) + (s.durationSec||0);
+    const mapa = getMaxMarcaPorActividadYFecha(filas);
+    const fechas = {};
+
+    Object.entries(mapa).forEach(([key, sec]) => {
+        const [, fecha] = key.split("|");
+        fechas[fecha] = (fechas[fecha] || 0) + sec;
     });
 
-    const dates = Object.keys(map).sort();
-    if(dates.length === 0){
+    const keys = Object.keys(fechas).sort();
+    if(keys.length === 0){
       parentEl.innerHTML = "<div class='small'>No hay datos para mostrar</div>";
       return;
     }
 
-    const vals = Object.values(map);
+    const vals = Object.values(fechas);
     const min = Math.min(...vals), max = Math.max(...vals);
 
     const months = {};
-    dates.forEach(d => {
-      const mon = d.slice(0,7);
-      months[mon] = months[mon] || [];
-      months[mon].push(d);
+    keys.forEach(d => {
+        const mon = d.slice(0,7);
+        months[mon] = months[mon] || [];
+        months[mon].push(d);
     });
 
     Object.keys(months).sort().forEach(mon => {
@@ -1283,39 +1309,28 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
       for(let i=1;i<=totalDays;i++){
         const day = String(i).padStart(2,"0");
-        const key = `${mon}-${day}`;
-        const sec = map[key] || 0;
+        const fecha = `${mon}-${day}`;
+        const sec = fechas[fecha] || 0;
 
         const el = document.createElement("div");
-        el.title = `${key}: ${(sec/3600).toFixed(2)} h`;
+        el.title = `${fecha}: ${(sec/3600).toFixed(2)} h`;
         el.style.width = "20px";
         el.style.height = "20px";
         el.style.borderRadius = "3px";
-      el.textContent = i;
-el.style.display = "flex";
-el.style.alignItems = "center";
-el.style.justifyContent = "center";
-el.style.fontSize = "10px";
-el.style.fontWeight = "600";
-el.style.color = sec === 0 ? "#999" : "#000";
 
-// color scale
-if(sec === 0){
-  el.style.background = "#f5f5f5";
-} else {
-  const t = (sec - min) / (max - min || 1);
-  const lightness = 90 - Math.round(t*50);
-  el.style.background = `hsl(140,60%,${lightness}%)`;
-}
-
-grid.appendChild(el);
+        el.textContent = i;
+        el.style.display = "flex";
+        el.style.alignItems = "center";
+        el.style.justifyContent = "center";
+        el.style.fontSize = "10px";
+        el.style.fontWeight = "600";
 
         if(sec === 0){
-          el.style.background = "#f5f5f5";
+            el.style.background = "#f5f5f5";
         } else {
-          const t = (sec - min) / (max - min || 1);
-          const lightness = 90 - Math.round(t*50);
-          el.style.background = `hsl(140,60%,${lightness}%)`;
+            const t = (sec - min) / (max - min || 1);
+            const lightness = 90 - Math.round(t*50);
+            el.style.background = `hsl(140,60%,${lightness}%)`;
         }
 
         grid.appendChild(el);
@@ -1324,7 +1339,8 @@ grid.appendChild(el);
       card.appendChild(grid);
       parentEl.appendChild(card);
     });
-  }
+}
+
 
 
   let pieChart = null;
@@ -1336,9 +1352,11 @@ grid.appendChild(el);
     const filters = (typeof readFilters === "function") ? readFilters() : null;
 
     // PIE
-    const actMap = aggregateByActivity(filasFiltradas, filters);
-    const labels = Object.keys(actMap);
-    const data = Object.values(actMap).map(sec => (sec/3600).toFixed(2));
+    // PIE
+const actMap = aggregateByActivity(filasFiltradas);
+const labels = Object.keys(actMap);
+const data = Object.values(actMap).map(sec => (sec/3600).toFixed(2));
+
 
     const pieCtx = document.getElementById("pieActividades");
     if(pieCtx){
@@ -1350,9 +1368,11 @@ grid.appendChild(el);
     }
 
     // BAR FECHAS
-    const byDate = aggregateByDate(filasFiltradas, filters);
-    const dateLabels = byDate.map(d=>d[0]);
-    const dateData = byDate.map(d => Number((d[1] / 3600).toFixed(2)));
+    // BAR FECHAS
+const byDate = aggregateByDate(filasFiltradas);
+const dateLabels = byDate.map(d=>d[0]);
+const dateData = byDate.map(d => Number((d[1] / 3600).toFixed(2)));
+
 
 
     const barCtx = document.getElementById("barPorFecha");
@@ -1454,6 +1474,7 @@ grid.appendChild(el);
 
 </body>
 </html>
+
 
 
 
