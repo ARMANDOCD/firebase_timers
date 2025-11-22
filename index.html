@@ -1237,7 +1237,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
         const sec = map[key] || 0;
 
         const el = document.createElement("div");
-        el.title = `${key}: ${sec} segundos`;
+        el.title = `${key}: ${(sec/3600).toFixed(2)} h`;
         el.style.width = "20px";
         el.style.height = "20px";
         el.style.borderRadius = "3px";
@@ -1284,7 +1284,8 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
     // BAR FECHAS
     const byDate = aggregateByDate(registroProcesado.sessions, filters);
     const dateLabels = byDate.map(d=>d[0]);
-    const dateData = byDate.map(d=>d[1]);
+    const dateData = byDate.map(d => Number((d[1] / 3600).toFixed(2)));
+
 
     const barCtx = document.getElementById("barPorFecha");
     if(barCtx){
@@ -1293,7 +1294,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
         type: 'bar',
         data: {
           labels: dateLabels,
-          datasets: [{ label: 'Segundos', data: dateData }]
+          datasets: [{ label: 'Horas', data: dateData }]
         }
       });
     }
@@ -1385,6 +1386,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
