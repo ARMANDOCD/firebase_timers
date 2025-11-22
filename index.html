@@ -1085,7 +1085,7 @@ function renderRegistroEventos(){
       // init filters UI (populates selects)
       initStatsUI();
 
-       usetTimeout(() => updateExtraCharts(), 50);
+       updateExtraCharts();
     }catch(e){
       console.error("Error en renderRegistroEventos:", e);
     }
@@ -1429,6 +1429,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
