@@ -316,6 +316,7 @@ textarea { resize: vertical; }
 // ---------------- Variables globales ----------------
 let filas = [];
    let filasFiltradas = [];
+   let filasTotales = [];
 
 let eventosRefGlobal = null;
 let lastEventosListener = null;
@@ -902,7 +903,7 @@ rows.forEach(r => {
 
   // apply filters to rows (filters object)
   let filtered = rows.slice();
-   filasFiltradas = filtered;
+   
   if(filters){
     if(filters.dia) filtered = filtered.filter(r => String(r.dia) === String(filters.dia));
     if(filters.fecha) filtered = filtered.filter(r => r.timestamp && r.timestamp.startsWith(filters.fecha));
@@ -912,6 +913,9 @@ rows.forEach(r => {
     if(filters.year) filtered = filtered.filter(r => r.timestamp && (new Date(r.timestamp)).getFullYear().toString() === filters.year);
   }
 
+   filasFiltradas = filtered;
+   filasTotales = rows;
+   
   // render tbody
   const tbody = document.getElementById("registroBody");
   tbody.innerHTML = "";
@@ -992,20 +996,38 @@ function initStatsUI(){
   // days
   registroProcesado.dias.sort((a,b)=>a.dia-b.dia).forEach(d=> fd.innerHTML += `<option value="${d.dia}">Día ${d.dia}</option>`);
   // fechas unique from sessions' dateKey
-  const fechas = [...new Set(registroProcesado.sessions.map(s=>s.dateKey).filter(x=>x))].sort();
-  fechas.forEach(f=> ff.innerHTML += `<option value="${f}">${f}</option>`);
-  // actividades from sessions names
-  const acts = [...new Set(registroProcesado.sessions.map(s=>s.name).filter(x=>x))].sort();
-  acts.forEach(a=> fa.innerHTML += `<option value="${a}">${a}</option>`);
-  // weeks
-  const weeks = [...new Set(registroProcesado.sessions.map(s=> s.startTs ? weekOfDate(s.startTs) : null).filter(x=>x))].sort();
-  weeks.forEach(w=> fw.innerHTML += `<option value="${w}">${w}</option>`);
-  // months
-  const months = [...new Set(registroProcesado.sessions.map(s=> s.startTs ? (new Date(s.startTs)).toISOString().slice(0,7) : null).filter(x=>x))].sort();
-  months.forEach(m=> fm.innerHTML += `<option value="${m}">${m}</option>`);
-  // years
-  const years = [...new Set(registroProcesado.sessions.map(s=> s.startTs ? String((new Date(s.startTs)).getFullYear()) : null).filter(x=>x))].sort();
-  years.forEach(y=> fy.innerHTML += `<option value="${y}">${y}</option>`);
+  // FECHAS (AAAA-MM-DD)
+const fechas = [...new Set(
+    filasTotales
+        .map(r => r.timestamp ? r.timestamp.slice(0,10) : null)
+        .filter(x => x)
+)].sort();
+fechas.forEach(f => ff.innerHTML += `<option value="${f}">${f}</option>`);
+
+// ACTIVIDADES
+const acts = [...new Set(
+    filasTotales.map(r => r.nombre).filter(x => x)
+)].sort();
+acts.forEach(a => fa.innerHTML += `<option value="${a}">${a}</option>`);
+
+// SEMANAS
+const weeks = [...new Set(
+    filasTotales.map(r => r.timestamp ? weekOfDate(r.timestamp) : null).filter(x => x)
+)].sort();
+weeks.forEach(w => fw.innerHTML += `<option value="${w}">${w}</option>`);
+
+// MESES (AAAA-MM)
+const months = [...new Set(
+    filasTotales.map(r => r.timestamp ? r.timestamp.slice(0,7) : null).filter(x => x)
+)].sort();
+months.forEach(m => fm.innerHTML += `<option value="${m}">${m}</option>`);
+
+// AÑOS
+const years = [...new Set(
+    filasTotales.map(r => r.timestamp ? String(new Date(r.timestamp).getFullYear()) : null).filter(x => x)
+)].sort();
+years.forEach(y => fy.innerHTML += `<option value="${y}">${y}</option>`);
+
 }
 
 // filters -> object
@@ -1432,6 +1454,7 @@ grid.appendChild(el);
 
 </body>
 </html>
+
 
 
 
