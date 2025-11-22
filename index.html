@@ -315,6 +315,8 @@ textarea { resize: vertical; }
 <script type="module">
 // ---------------- Variables globales ----------------
 let filas = [];
+   let filasFiltradas = [];
+
 let eventosRefGlobal = null;
 let lastEventosListener = null;
 let sessionMapByStart = {};
@@ -688,67 +690,74 @@ if (ev.tipo === 'timer_creado' || ev.tipo === 'timer_editado') {
   }
 
   // --- Build sessions using marks (marca_i - marca_i-1) grouped by timerId ---
-  // --- Build sessions using ONLY timer_iniciado → timer_pausado pairs ---
-const sessions = [];
-const eventosPorTimer = {};
+  const sessions = [];
+  const eventosPorTimer = {};
 
-evs.forEach(ev => {
-  const tid = ev.timerId;
-  if (!tid) return;
-  if (!eventosPorTimer[tid]) eventosPorTimer[tid] = [];
-  if (ev.tipo === "timer_iniciado" || ev.tipo === "timer_pausado") {
+  // group events by timerId (ignore events without timerId except we still keep rawEvents)
+  evs.forEach(ev => {
+    const tid = ev.timerId;
+    if(!tid) return;
+    if(!eventosPorTimer[tid]) eventosPorTimer[tid] = [];
     eventosPorTimer[tid].push(ev);
-  }
-});
+  });
 
-Object.keys(eventosPorTimer).forEach(tid => {
-  const lista = eventosPorTimer[tid];
+  // process each timer's list
+  Object.keys(eventosPorTimer).forEach(tid => {
+    const lista = eventosPorTimer[tid];
 
-  // order by timestamp
-  lista.sort((a,b) => Date.parse(a.timestamp||0) - Date.parse(b.timestamp||0));
+    // order by timestamp asc (robusto)
+    lista.sort((a,b) => {
+      const ta = a.timestamp ? Date.parse(a.timestamp) : 0;
+      const tb = b.timestamp ? Date.parse(b.timestamp) : 0;
+      return ta - tb;
+    });
 
-  for (let i = 0; i < lista.length - 1; i++) {
+    // walk consecutive pairs and compute duration = marca(curr) - marca(prev)
+    for(let i=1; i<lista.length; i++){
+      const prev = lista[i-1];
+      const curr = lista[i];
 
-    const ini = lista[i];
-    const next = lista[i+1];
+      // extract marks preferring endElapsed, then startElapsed, then elapsed
+      const pMark = (prev.endElapsed !== undefined && prev.endElapsed !== null) ? Number(prev.endElapsed)
+                   : (prev.startElapsed !== undefined && prev.startElapsed !== null) ? Number(prev.startElapsed)
+                   : (prev.elapsed !== undefined && prev.elapsed !== null) ? Number(prev.elapsed)
+                   : null;
 
-    if (ini.tipo === "timer_iniciado" && next.tipo === "timer_pausado") {
+      const cMark = (curr.endElapsed !== undefined && curr.endElapsed !== null) ? Number(curr.endElapsed)
+                   : (curr.startElapsed !== undefined && curr.startElapsed !== null) ? Number(curr.startElapsed)
+                   : (curr.elapsed !== undefined && curr.elapsed !== null) ? Number(curr.elapsed)
+                   : null;
 
-      const startMark = Number(ini.startElapsed ?? ini.elapsed ?? 0);
-      const endMark   = Number(next.endElapsed ?? next.elapsed ?? 0);
+      if(pMark != null && cMark != null){
+        let dur = Math.max(0, Math.floor(cMark - pMark)); // seconds
+        // compute name (prefer explicit name fields, else metadata)
+        const name = curr.name || prev.name || (metaByTimerId[tid] && metaByTimerId[tid].name) || tid;
+        // objetivo: prefer objetivoPorNombre by name, else metaByTimerId targetMin, else null
+        let objetivoMin = null;
+        if(name && objetivoPorNombre[name] !== undefined) objetivoMin = Number(objetivoPorNombre[name]);
+        else if(metaByTimerId[tid] && metaByTimerId[tid].targetMin !== undefined && metaByTimerId[tid].targetMin !== null) objetivoMin = Number(metaByTimerId[tid].targetMin);
+        else if(prev.target !== undefined) objetivoMin = Number(prev.target);
 
-      const dur = Math.max(0, endMark - startMark);
+        const diaNum = findDiaForTs(prev.timestamp);
+        const dateKey = prev.timestamp ? (new Date(prev.timestamp)).toISOString().slice(0,10) : null;
 
-      const name =
-        ini.name || next.name ||
-        (metaByTimerId[tid] && metaByTimerId[tid].name) ||
-        tid;
-
-      const objetivoMin =
-        (registro.objetivoPorNombre && registro.objetivoPorNombre[name]) ??
-        (metaByTimerId[tid] ? metaByTimerId[tid].targetMin : null) ??
-        null;
-
-      const diaNum = findDiaForTs(ini.timestamp);
-      const dateKey = ini.timestamp ? ini.timestamp.slice(0,10) : null;
-
-      sessions.push({
-        timerId: tid,
-        name,
-        startTs: ini.timestamp,
-        endTs: next.timestamp,
-        startElapsed: startMark,
-        endElapsed: endMark,
-        durationSec: dur,
-        dia: diaNum,
-        dateKey,
-        objetivoMin,
-        closingType: "timer_pausado"
-      });
+        sessions.push({
+          timerId: tid,
+          name,
+          startTs: prev.timestamp || null,
+          endTs: curr.timestamp || null,
+          startElapsed: pMark,
+          endElapsed: cMark,
+          durationSec: dur,
+          dia: diaNum,
+          dateKey,
+          objetivoMin,
+          closingType: curr.tipo || null
+        });
+      }
+      // if marks missing, skip pair (can't compute duration)
     }
-  }
-});
-
+  });
 
   // Note: we intentionally DO NOT try to auto-close open sessions by timestamp here using openMap.
   // If you want an "open" session closing at day end/now, we could add it — but durations based on marks require a following mark.
@@ -893,6 +902,7 @@ rows.forEach(r => {
 
   // apply filters to rows (filters object)
   let filtered = rows.slice();
+   filasFiltradas = filtered;
   if(filters){
     if(filters.dia) filtered = filtered.filter(r => String(r.dia) === String(filters.dia));
     if(filters.fecha) filtered = filtered.filter(r => r.timestamp && r.timestamp.startsWith(filters.fecha));
@@ -925,150 +935,11 @@ if(f.nombre){
 
   // update stats view (we'll reuse refrescarEstadisticas which reads from registroProcesado and filters)
   refrescarEstadisticas(); // will apply same filters to charts
-   updateStatsFromTable();
-
    if (typeof updateExtraCharts === "function") {
     updateExtraCharts();
 }
 }
 
-function initStatsUIFromTable() {
-  const rows = [...document.querySelectorAll("#registroBody tr")];
-
-  const diasSet = new Set();
-  const fechasSet = new Set();
-  const actsSet = new Set();
-
-  rows.forEach(r=>{
-    const c = r.children;
-    const dia = c[0].innerText.trim();
-    const act = c[1].innerText.trim();
-    const ts = c[4].innerText.trim();
-    const fecha = ts ? ts.slice(0,10) : null;
-
-    if(dia && !dia.includes("sin")) diasSet.add(dia.replace("Día ",""));
-    if(act) actsSet.add(act);
-    if(fecha) fechasSet.add(fecha);
-  });
-
-  const fd = document.getElementById("filterDia");
-  const ff = document.getElementById("filterFecha");
-  const fa = document.getElementById("filterActividad");
-
-  fd.innerHTML = `<option value="">Todos los días</option>`;
-  [...diasSet].sort().forEach(d=> fd.innerHTML += `<option value="${d}">${d}</option>`);
-
-  ff.innerHTML = `<option value="">Todas las fechas</option>`;
-  [...fechasSet].sort().forEach(f=> ff.innerHTML += `<option value="${f}">${f}</option>`);
-
-  fa.innerHTML = `<option value="">Todas las actividades</option>`;
-  [...actsSet].sort().forEach(a=> fa.innerHTML += `<option value="${a}">${a}</option>`);
-}
-
-
-
-
-   
-// ===============================================
-//  🔥 ESTADÍSTICAS GENERADAS DESDE LA TABLA
-// ===============================================
-function parseHHMMSS(str){
-    if(!str) return 0;
-    const p = str.split(":").map(Number);
-    if(p.length !== 3) return 0;
-    return p[0]*3600 + p[1]*60 + p[2];
-}
-
-function getStatsFromTable(){
-    const rows = document.querySelectorAll("#registroBody tr");
-
-    const porActividad = {};
-    const porDia = {};
-    const porFecha = {};
-    const heatmap = {};
-
-    rows.forEach(tr => {
-        const tds = tr.querySelectorAll("td");
-        if(tds.length < 8) return;
-
-        const dia = tds[0].innerText.trim();
-        const actividad = tds[1].innerText.trim();
-        const marcaStr = tds[3].innerText.trim();
-        const fechaHora = tds[4].innerText.trim();
-        const objetivoStr = tds[5].innerText.trim();
-
-        if(!actividad) return;
-
-        const dur = parseHHMMSS(marcaStr);
-
-        // --------------------------
-        //  ACUMULAR POR ACTIVIDAD
-        // --------------------------
-        if(!porActividad[actividad]) porActividad[actividad] = 0;
-        porActividad[actividad] += dur;
-
-        // --------------------------
-        //  ACUMULAR POR DÍA
-        // --------------------------
-        const di = Number(dia);
-        if(!isNaN(di)){
-            if(!porDia[di]) porDia[di] = 0;
-            porDia[di] += dur;
-        }
-
-        // --------------------------
-        //  ACUMULAR POR FECHA (YYYY-MM-DD)
-        // --------------------------
-        if(fechaHora){
-            const fechaISO = new Date(fechaHora).toISOString().slice(0,10);
-            if(!porFecha[fechaISO]) porFecha[fechaISO] = 0;
-            porFecha[fechaISO] += dur;
-
-            // heatmap usa la misma fecha
-            heatmap[fechaISO] = (heatmap[fechaISO] || 0) + dur;
-        }
-    });
-
-    return { porActividad, porDia, porFecha, heatmap };
-}
-
-   function updateStatsFromTable(){
-    const stats = getStatsFromTable();
-
-    // =============== GRÁFICO ACTIVIDADES ===============
-    if(chartAct) chartAct.destroy();
-    chartAct = new Chart(document.getElementById("chartActividades"), {
-        type: "bar",
-        data: {
-            labels: Object.keys(stats.porActividad),
-            datasets: [{
-                label: "Horas",
-                data: Object.values(stats.porActividad).map(s => s / 3600)
-            }]
-        }
-    });
-
-    // =============== GRÁFICO POR DÍA ===================
-    if(chartDia) chartDia.destroy();
-    chartDia = new Chart(document.getElementById("chartDias"), {
-        type: "line",
-        data: {
-            labels: Object.keys(stats.porDia).map(d=>"Día "+d),
-            datasets: [{
-                label: "Horas",
-                data: Object.values(stats.porDia).map(s => s / 3600),
-                tension: 0.25
-            }]
-        }
-    });
-
-    // =============== PIE EXTRA ===================
-    if(window.updateExtraCharts){
-        updateExtraCharts(); // usa los mismos valores, porque extraCharts los lee de aquí
-    }
-}
-
-   
 // helper to determine dia for event using dias array
 function findDiaForEvent(ts, diasArr){
   if(!ts) return null;
@@ -1104,13 +975,13 @@ function weekOfDate(isoTs){
 
 // init stats UI
 function initStatsUI(){
+  if(!registroProcesado) return;
   const fd = document.getElementById("filterDia");
   const ff = document.getElementById("filterFecha");
   const fa = document.getElementById("filterActividad");
   const fw = document.getElementById("filterWeek");
   const fm = document.getElementById("filterMonth");
   const fy = document.getElementById("filterYear");
-
   // reset
   fd.innerHTML = `<option value="">Todos los días</option>`;
   ff.innerHTML = `<option value="">Todas las fechas</option>`;
@@ -1118,65 +989,24 @@ function initStatsUI(){
   fw.innerHTML = `<option value="">Todas las semanas</option>`;
   fm.innerHTML = `<option value="">Todos los meses</option>`;
   fy.innerHTML = `<option value="">Todos los años</option>`;
-
-  // --- 🔥 EXTRAER DESDE LA TABLA (autoridad absoluta) ---
-  const rows = document.querySelectorAll("#registroBody tr");
-
-  const diasSet = new Set();
-  const fechasSet = new Set();
-  const actividadesSet = new Set();
-  const semanasSet = new Set();
-  const mesesSet = new Set();
-  const añosSet = new Set();
-
-  rows.forEach(tr => {
-    const tds = tr.querySelectorAll("td");
-    if(tds.length < 5) return;
-
-    const dia = tds[0].innerText.trim();
-    const actividad = tds[1].innerText.trim();
-    const fechaLocal = tds[4].innerText.trim();
-
-    if(fechaLocal){
-      const date = new Date(fechaLocal);
-      if(!isNaN(date)){
-        const iso = date.toISOString();
-        const dKey = iso.slice(0,10);
-        const mon = iso.slice(0,7);
-        const yr = String(date.getFullYear());
-        const week = weekOfDate(iso);
-
-        fechasSet.add(dKey);
-        mesesSet.add(mon);
-        añosSet.add(yr);
-        semanasSet.add(week);
-      }
-    }
-
-    if(dia && !dia.includes("sin día")) diasSet.add(dia);
-    if(actividad) actividadesSet.add(actividad);
-  });
-
-  // llenar selects
-  [...diasSet].sort((a,b)=> Number(a)-Number(b))
-    .forEach(d => fd.innerHTML += `<option value="${d}">Día ${d}</option>`);
-
-  [...fechasSet].sort()
-    .forEach(f => ff.innerHTML += `<option value="${f}">${f}</option>`);
-
-  [...actividadesSet].sort()
-    .forEach(a => fa.innerHTML += `<option value="${a}">${a}</option>`);
-
-  [...semanasSet].sort()
-    .forEach(w => fw.innerHTML += `<option value="${w}">${w}</option>`);
-
-  [...mesesSet].sort()
-    .forEach(m => fm.innerHTML += `<option value="${m}">${m}</option>`);
-
-  [...añosSet].sort()
-    .forEach(y => fy.innerHTML += `<option value="${y}">${y}</option>`);
+  // days
+  registroProcesado.dias.sort((a,b)=>a.dia-b.dia).forEach(d=> fd.innerHTML += `<option value="${d.dia}">Día ${d.dia}</option>`);
+  // fechas unique from sessions' dateKey
+  const fechas = [...new Set(registroProcesado.sessions.map(s=>s.dateKey).filter(x=>x))].sort();
+  fechas.forEach(f=> ff.innerHTML += `<option value="${f}">${f}</option>`);
+  // actividades from sessions names
+  const acts = [...new Set(registroProcesado.sessions.map(s=>s.name).filter(x=>x))].sort();
+  acts.forEach(a=> fa.innerHTML += `<option value="${a}">${a}</option>`);
+  // weeks
+  const weeks = [...new Set(registroProcesado.sessions.map(s=> s.startTs ? weekOfDate(s.startTs) : null).filter(x=>x))].sort();
+  weeks.forEach(w=> fw.innerHTML += `<option value="${w}">${w}</option>`);
+  // months
+  const months = [...new Set(registroProcesado.sessions.map(s=> s.startTs ? (new Date(s.startTs)).toISOString().slice(0,7) : null).filter(x=>x))].sort();
+  months.forEach(m=> fm.innerHTML += `<option value="${m}">${m}</option>`);
+  // years
+  const years = [...new Set(registroProcesado.sessions.map(s=> s.startTs ? String((new Date(s.startTs)).getFullYear()) : null).filter(x=>x))].sort();
+  years.forEach(y=> fy.innerHTML += `<option value="${y}">${y}</option>`);
 }
-
 
 // filters -> object
 function readFilters(){
@@ -1191,35 +1021,60 @@ function readFilters(){
 }
 
 // refrescarEstadisticas draws charts using registroProcesado and current filters
-function refrescarEstadisticas(){
-  if(!registroProcesado) return;
-  const filters = readFilters();
-  // reuse filtrarStats logic: filter sessions
-  let lista = registroProcesado.sessions.slice();
-  if(filters.dia) lista = lista.filter(s=> String(s.dia) === String(filters.dia));
-  if(filters.fecha) lista = lista.filter(s=> s.dateKey === filters.fecha);
-  if(filters.actividad) lista = lista.filter(s=> s.name === filters.actividad);
-  if(filters.week) lista = lista.filter(s=> weekOfDate(s.startTs) === filters.week);
-  if(filters.month) lista = lista.filter(s=> s.startTs ? (new Date(s.startTs)).toISOString().slice(0,7) === filters.month : false);
-  if(filters.year) lista = lista.filter(s=> s.startTs ? String((new Date(s.startTs)).getFullYear()) === filters.year : false);
+function refrescarEstadisticas() {
+    if (!filasFiltradas) return;
 
-  document.getElementById("statsStatus").innerText = `Mostrando ${lista.length} sesiones`;
+    // Total de tiempo
+    const totalSec = filasFiltradas.reduce((acc, f) => {
+        if (f.marca != null) return acc + Number(f.marca);
+        return acc;
+    }, 0);
 
-  const total = lista.reduce((a,b)=> a + (b.durationSec||0), 0);
-  document.getElementById("statsResumen").innerHTML = `<p><b>Tiempo total:</b> ${formatTimeFromSeconds(total)}</p><p><b>Días en marcha:</b> ${[...new Set(lista.map(s=>s.dia).filter(x=>x!=null))].length}</p>`;
+    document.getElementById("statsResumen").innerHTML = `
+        <p><b>Tiempo total:</b> ${formatTimeFromSeconds(totalSec)}</p>
+        <p><b>Días con datos:</b> ${new Set(filasFiltradas.map(f => f.dia).filter(x => x != null)).size}</p>
+    `;
 
-  // actividad chart
-  const act = {};
-  lista.forEach(s => act[s.name] = (act[s.name]||0) + (s.durationSec||0));
-  if(chartAct) try{ chartAct.destroy(); }catch(e){}
-  chartAct = new Chart(document.getElementById("chartActividades"), { type:'bar', data:{ labels:Object.keys(act), datasets:[{ label:'Horas', data:Object.values(act).map(s => s / 3600) }] } });
+    // ---- ACTIVIDAD ----
+    const act = {};
+    filasFiltradas.forEach(f => {
+        if (!act[f.nombre]) act[f.nombre] = 0;
+        if (f.marca != null) act[f.nombre] += Number(f.marca);
+    });
 
-  // dia chart
-  const dia = {};
-  lista.forEach(s => { if(s.dia!==null && s.dia!==undefined) dia[s.dia] = (dia[s.dia]||0) + (s.durationSec||0); });
-  if(chartDia) try{ chartDia.destroy(); }catch(e){}
-  chartDia = new Chart(document.getElementById("chartDias"), { type:'line', data:{ labels:Object.keys(dia).map(d=>"Día "+d), datasets:[{ label:'Horas', data:Object.values(dia).map(s => s / 3600), tension:0.25 }] } });
+    if (chartAct) chartAct.destroy();
+    chartAct = new Chart(document.getElementById("chartActividades"), {
+        type: "bar",
+        data: {
+            labels: Object.keys(act),
+            datasets: [{
+                label: "Horas",
+                data: Object.values(act).map(s => s / 3600)
+            }]
+        }
+    });
+
+    // ---- DÍAS ----
+    const dias = {};
+    filasFiltradas.forEach(f => {
+        if (!dias[f.dia]) dias[f.dia] = 0;
+        if (f.marca != null) dias[f.dia] += Number(f.marca);
+    });
+
+    if (chartDia) chartDia.destroy();
+    chartDia = new Chart(document.getElementById("chartDias"), {
+        type: "line",
+        data: {
+            labels: Object.keys(dias).map(d => "Día " + d),
+            datasets: [{
+                label: "Horas",
+                data: Object.values(dias).map(s => s / 3600),
+                tension: 0.25
+            }]
+        }
+    });
 }
+
 
 // wire filters events
 setTimeout(()=>{
@@ -1259,8 +1114,7 @@ function renderRegistroEventos(){
       // now build filas (raw events normalized) and render table with no filters initially
       buildAndRenderTable(registroProcesado, readFilters());
       // init filters UI (populates selects)
-      initStatsUIFromTable();
-
+      initStatsUI();
 
        
     }catch(e){
@@ -1354,152 +1208,147 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
     return Object.entries(map).sort((a,b)=> a[0].localeCompare(b[0]));
   }
 
-  function renderHeatmapFromTable(fechasMap, parentEl){
+  function renderHeatmap(sessions, parentEl, filters){
     parentEl.innerHTML = "";
+    const map = {};
 
-    const dates = Object.keys(fechasMap).sort();
-    if(dates.length===0){
-      parentEl.innerHTML = "<i>No hay datos</i>";
+    sessions.forEach(s=>{
+      if(!s.dateKey) return;
+      if(filters){
+        if(filters.actividad && s.name !== filters.actividad) return;
+      }
+      map[s.dateKey] = (map[s.dateKey]||0) + (s.durationSec||0);
+    });
+
+    const dates = Object.keys(map).sort();
+    if(dates.length === 0){
+      parentEl.innerHTML = "<div class='small'>No hay datos para mostrar</div>";
       return;
     }
 
-    const vals = Object.values(fechasMap);
-    const min = Math.min(...vals);
-    const max = Math.max(...vals);
+    const vals = Object.values(map);
+    const min = Math.min(...vals), max = Math.max(...vals);
 
     const months = {};
-    dates.forEach(d=>{
+    dates.forEach(d => {
       const mon = d.slice(0,7);
       months[mon] = months[mon] || [];
       months[mon].push(d);
     });
 
-    Object.keys(months).sort().forEach(mon=>{
+    Object.keys(months).sort().forEach(mon => {
       const card = document.createElement("div");
-      card.style.padding="6px";
-      card.style.border="1px solid #ccc";
-      card.style.borderRadius="5px";
-      card.style.margin="5px";
+      card.style.border = "1px solid #eee";
+      card.style.padding = "6px";
+      card.style.borderRadius = "6px";
+      card.style.minWidth = "220px";
+      card.style.flex = "1 0 220px";
 
       const title = document.createElement("div");
+      title.style.fontWeight = "600";
+      title.style.marginBottom = "6px";
       title.textContent = mon;
-      title.style.fontWeight="600";
       card.appendChild(title);
 
+      const firstDay = new Date(mon + "-01");
+      const lastDay = new Date(firstDay.getFullYear(), firstDay.getMonth()+1, 0);
+      const totalDays = lastDay.getDate();
+
       const grid = document.createElement("div");
-      grid.style.display="grid";
-      grid.style.gridTemplateColumns="repeat(7,20px)";
-      grid.style.gap="4px";
+      grid.style.display = "grid";
+      grid.style.gridTemplateColumns = "repeat(7,20px)";
+      grid.style.gap = "4px";
 
-      const first = new Date(mon+"-01");
-      const last = new Date(first.getFullYear(), first.getMonth()+1, 0);
+      for(let i=1;i<=totalDays;i++){
+        const day = String(i).padStart(2,"0");
+        const key = `${mon}-${day}`;
+        const sec = map[key] || 0;
 
-      for(let i=1;i<=last.getDate();i++){
-        const key = `${mon}-${String(i).padStart(2,"0")}`;
-        const sec = fechasMap[key] || 0;
+        const el = document.createElement("div");
+        el.title = `${key}: ${(sec/3600).toFixed(2)} h`;
+        el.style.width = "20px";
+        el.style.height = "20px";
+        el.style.borderRadius = "3px";
+      el.textContent = i;
+el.style.display = "flex";
+el.style.alignItems = "center";
+el.style.justifyContent = "center";
+el.style.fontSize = "10px";
+el.style.fontWeight = "600";
+el.style.color = sec === 0 ? "#999" : "#000";
 
-        const div = document.createElement("div");
-        div.textContent = i;
-        div.style.width="20px";
-        div.style.height="20px";
-        div.style.display="flex";
-        div.style.alignItems="center";
-        div.style.justifyContent="center";
-        div.style.fontSize="10px";
+// color scale
+if(sec === 0){
+  el.style.background = "#f5f5f5";
+} else {
+  const t = (sec - min) / (max - min || 1);
+  const lightness = 90 - Math.round(t*50);
+  el.style.background = `hsl(140,60%,${lightness}%)`;
+}
 
-        if(sec===0){
-          div.style.background="#eee";
+grid.appendChild(el);
+
+        if(sec === 0){
+          el.style.background = "#f5f5f5";
         } else {
-          const t = (sec-min)/(max-min || 1);
-          const light = 90 - Math.round(t*50);
-          div.style.background=`hsl(140,60%,${light}%)`;
+          const t = (sec - min) / (max - min || 1);
+          const lightness = 90 - Math.round(t*50);
+          el.style.background = `hsl(140,60%,${lightness}%)`;
         }
 
-        grid.appendChild(div);
+        grid.appendChild(el);
       }
 
       card.appendChild(grid);
       parentEl.appendChild(card);
     });
-}
-
+  }
 
 
   let pieChart = null;
   let barChart = null;
 
   function updateCharts(){
-    const rows = [...document.querySelectorAll("#registroBody tr")];
+    if(!registroProcesado) return;
 
-  const actividades = {};
-  const fechas = {};
-  const diario = {};
+    const filters = (typeof readFilters === "function") ? readFilters() : null;
 
-  function toSec(hms){
-    if(!hms) return 0;
-    const [h,m,s] = hms.split(":").map(Number);
-    return h*3600 + m*60 + s;
+    // PIE
+    const actMap = aggregateByActivity(filasFiltradas, filters);
+    const labels = Object.keys(actMap);
+    const data = Object.values(actMap).map(sec => (sec/3600).toFixed(2));
+
+    const pieCtx = document.getElementById("pieActividades");
+    if(pieCtx){
+      if(pieChart) pieChart.destroy();
+      pieChart = new Chart(pieCtx, {
+        type: 'pie',
+        data: { labels, datasets: [{ data }] }
+      });
+    }
+
+    // BAR FECHAS
+    const byDate = aggregateByDate(filasFiltradas, filters);
+    const dateLabels = byDate.map(d=>d[0]);
+    const dateData = byDate.map(d => Number((d[1] / 3600).toFixed(2)));
+
+
+    const barCtx = document.getElementById("barPorFecha");
+    if(barCtx){
+      if(barChart) barChart.destroy();
+      barChart = new Chart(barCtx, {
+        type: 'bar',
+        data: {
+          labels: dateLabels,
+          datasets: [{ label: 'Horas', data: dateData }]
+        }
+      });
+    }
+
+    // HEATMAP
+    const heatHolder = document.getElementById("heatmapHolder");
+    if(heatHolder) renderHeatmap(filasFiltradas, heatHolder, filters);
   }
-
-  rows.forEach(r=>{
-    const c = r.children;
-    const dia = c[0].innerText.trim();
-    const act = c[1].innerText.trim();
-    const marca = c[3].innerText.trim();
-    const ts = c[4].innerText.trim();
-    const fecha = ts ? ts.slice(0,10) : null;
-
-    const sec = toSec(marca);
-
-    // por actividad
-    actividades[act] = (actividades[act]||0) + sec;
-
-    // por fecha
-    if(fecha)
-      fechas[fecha] = (fechas[fecha]||0) + sec;
-
-    // por día
-    if(dia && !dia.includes("sin"))
-      diario[dia] = (diario[dia]||0) + sec;
-  });
-
-  // PIE actividades
-  const p = document.getElementById("pieActividades");
-  if(p){
-    if(window.pieChart) window.pieChart.destroy();
-    window.pieChart = new Chart(p,{
-      type:"pie",
-      data:{
-        labels:Object.keys(actividades),
-        datasets:[{
-          data:Object.values(actividades).map(x=>x/3600)
-        }]
-      }
-    });
-  }
-
-  // BARRA fechas
-  const bf = document.getElementById("barPorFecha");
-  if(bf){
-    if(window.barChart) window.barChart.destroy();
-    window.barChart = new Chart(bf,{
-      type:"bar",
-      data:{
-        labels:Object.keys(fechas).sort(),
-        datasets:[{
-          label:"Horas",
-          data:Object.values(fechas).map(x=>x/3600)
-        }]
-      }
-    });
-  }
-
-  // HEATMAP (usa fechas[])
-  const heatHolder = document.getElementById("heatmapHolder");
-  if(heatHolder){
-    renderHeatmapFromTable(fechas, heatHolder);
-  }
-}
 
   function attachFilterListeners(){
     const ids = ["filterDia","filterFecha","filterActividad","filterWeek","filterMonth","filterYear"];
@@ -1583,10 +1432,6 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
-
-
-
-
 
 
 
