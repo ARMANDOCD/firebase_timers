@@ -1165,10 +1165,10 @@ function renderRegistroEventos(){
       // process into registro
       registroProcesado = processEventsToRegistro(eventosArr);
       // now build filas (raw events normalized) and render table with no filters initially
-      buildAndRenderTable(registroProcesado, readFilters());
+      
       // init filters UI (populates selects)
       initStatsUI();
-
+buildAndRenderTable(registroProcesado, readFilters());
        
     }catch(e){
       console.error("Error en renderRegistroEventos:", e);
@@ -1242,20 +1242,20 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
     return Object.entries(fechas).sort((a,b)=> a[0].localeCompare(b[0]));
 }
+function aggregateByActivity(filas) {
+    const mapa = getMaxMarcaPorActividadYFecha(filas);
+    const act = {};
 
-
-  function aggregateByDate(sessions, filters){
-    const map = {};
-    sessions.forEach(s=>{
-      if(!s.dateKey) return;
-      if(filters){
-        if(filters.actividad && s.name !== filters.actividad) return;
-      }
-      map[s.dateKey] = (map[s.dateKey]||0) + (s.durationSec||0);
+    Object.entries(mapa).forEach(([key, sec]) => {
+        const [actividad] = key.split("|");
+        act[actividad] = (act[actividad] || 0) + sec;
     });
 
-    return Object.entries(map).sort((a,b)=> a[0].localeCompare(b[0]));
-  }
+    return act;
+}
+
+
+  
 
   function renderHeatmap(filas, parentEl) {
     parentEl.innerHTML = "";
@@ -1474,6 +1474,7 @@ const dateData = byDate.map(d => Number((d[1] / 3600).toFixed(2)));
 
 </body>
 </html>
+
 
 
 
