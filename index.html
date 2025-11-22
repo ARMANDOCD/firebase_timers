@@ -1146,14 +1146,6 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 (function(){
   // util: convierte segundos a HH:MM:SS
-  function secToHHMMSS(s){
-    if(s == null || isNaN(Number(s))) return "";
-    s = Math.max(0, Math.floor(Number(s)));
-    const h = String(Math.floor(s/3600)).padStart(2,"0");
-    const m = String(Math.floor((s%3600)/60)).padStart(2,"0");
-    const ss = String(s%60).padStart(2,"0");
-    return `${h}:${m}:${ss}`;
-  }
 
   // Espera hasta que el DOM y registroProcesado existan
   function ready(fn){
@@ -1437,6 +1429,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
