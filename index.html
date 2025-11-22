@@ -932,11 +932,113 @@ if(f.nombre){
 
   // update stats view (we'll reuse refrescarEstadisticas which reads from registroProcesado and filters)
   refrescarEstadisticas(); // will apply same filters to charts
+   updateStatsFromTable();
+
    if (typeof updateExtraCharts === "function") {
     updateExtraCharts();
 }
 }
 
+// ===============================================
+//  🔥 ESTADÍSTICAS GENERADAS DESDE LA TABLA
+// ===============================================
+function parseHHMMSS(str){
+    if(!str) return 0;
+    const p = str.split(":").map(Number);
+    if(p.length !== 3) return 0;
+    return p[0]*3600 + p[1]*60 + p[2];
+}
+
+function getStatsFromTable(){
+    const rows = document.querySelectorAll("#registroBody tr");
+
+    const porActividad = {};
+    const porDia = {};
+    const porFecha = {};
+    const heatmap = {};
+
+    rows.forEach(tr => {
+        const tds = tr.querySelectorAll("td");
+        if(tds.length < 8) return;
+
+        const dia = tds[0].innerText.trim();
+        const actividad = tds[1].innerText.trim();
+        const marcaStr = tds[3].innerText.trim();
+        const fechaHora = tds[4].innerText.trim();
+        const objetivoStr = tds[5].innerText.trim();
+
+        if(!actividad) return;
+
+        const dur = parseHHMMSS(marcaStr);
+
+        // --------------------------
+        //  ACUMULAR POR ACTIVIDAD
+        // --------------------------
+        if(!porActividad[actividad]) porActividad[actividad] = 0;
+        porActividad[actividad] += dur;
+
+        // --------------------------
+        //  ACUMULAR POR DÍA
+        // --------------------------
+        const di = Number(dia);
+        if(!isNaN(di)){
+            if(!porDia[di]) porDia[di] = 0;
+            porDia[di] += dur;
+        }
+
+        // --------------------------
+        //  ACUMULAR POR FECHA (YYYY-MM-DD)
+        // --------------------------
+        if(fechaHora){
+            const fechaISO = new Date(fechaHora).toISOString().slice(0,10);
+            if(!porFecha[fechaISO]) porFecha[fechaISO] = 0;
+            porFecha[fechaISO] += dur;
+
+            // heatmap usa la misma fecha
+            heatmap[fechaISO] = (heatmap[fechaISO] || 0) + dur;
+        }
+    });
+
+    return { porActividad, porDia, porFecha, heatmap };
+}
+
+   function updateStatsFromTable(){
+    const stats = getStatsFromTable();
+
+    // =============== GRÁFICO ACTIVIDADES ===============
+    if(chartAct) chartAct.destroy();
+    chartAct = new Chart(document.getElementById("chartActividades"), {
+        type: "bar",
+        data: {
+            labels: Object.keys(stats.porActividad),
+            datasets: [{
+                label: "Horas",
+                data: Object.values(stats.porActividad).map(s => s / 3600)
+            }]
+        }
+    });
+
+    // =============== GRÁFICO POR DÍA ===================
+    if(chartDia) chartDia.destroy();
+    chartDia = new Chart(document.getElementById("chartDias"), {
+        type: "line",
+        data: {
+            labels: Object.keys(stats.porDia).map(d=>"Día "+d),
+            datasets: [{
+                label: "Horas",
+                data: Object.values(stats.porDia).map(s => s / 3600),
+                tension: 0.25
+            }]
+        }
+    });
+
+    // =============== PIE EXTRA ===================
+    if(window.updateExtraCharts){
+        updateExtraCharts(); // usa los mismos valores, porque extraCharts los lee de aquí
+    }
+}
+
+   
 // helper to determine dia for event using dias array
 function findDiaForEvent(ts, diasArr){
   if(!ts) return null;
@@ -1404,6 +1506,7 @@ grid.appendChild(el);
 
 </body>
 </html>
+
 
 
 
