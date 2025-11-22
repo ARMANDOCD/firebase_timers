@@ -688,74 +688,67 @@ if (ev.tipo === 'timer_creado' || ev.tipo === 'timer_editado') {
   }
 
   // --- Build sessions using marks (marca_i - marca_i-1) grouped by timerId ---
-  const sessions = [];
-  const eventosPorTimer = {};
+  // --- Build sessions using ONLY timer_iniciado → timer_pausado pairs ---
+const sessions = [];
+const eventosPorTimer = {};
 
-  // group events by timerId (ignore events without timerId except we still keep rawEvents)
-  evs.forEach(ev => {
-    const tid = ev.timerId;
-    if(!tid) return;
-    if(!eventosPorTimer[tid]) eventosPorTimer[tid] = [];
+evs.forEach(ev => {
+  const tid = ev.timerId;
+  if (!tid) return;
+  if (!eventosPorTimer[tid]) eventosPorTimer[tid] = [];
+  if (ev.tipo === "timer_iniciado" || ev.tipo === "timer_pausado") {
     eventosPorTimer[tid].push(ev);
-  });
+  }
+});
 
-  // process each timer's list
-  Object.keys(eventosPorTimer).forEach(tid => {
-    const lista = eventosPorTimer[tid];
+Object.keys(eventosPorTimer).forEach(tid => {
+  const lista = eventosPorTimer[tid];
 
-    // order by timestamp asc (robusto)
-    lista.sort((a,b) => {
-      const ta = a.timestamp ? Date.parse(a.timestamp) : 0;
-      const tb = b.timestamp ? Date.parse(b.timestamp) : 0;
-      return ta - tb;
-    });
+  // order by timestamp
+  lista.sort((a,b) => Date.parse(a.timestamp||0) - Date.parse(b.timestamp||0));
 
-    // walk consecutive pairs and compute duration = marca(curr) - marca(prev)
-    for(let i=1; i<lista.length; i++){
-      const prev = lista[i-1];
-      const curr = lista[i];
+  for (let i = 0; i < lista.length - 1; i++) {
 
-      // extract marks preferring endElapsed, then startElapsed, then elapsed
-      const pMark = (prev.endElapsed !== undefined && prev.endElapsed !== null) ? Number(prev.endElapsed)
-                   : (prev.startElapsed !== undefined && prev.startElapsed !== null) ? Number(prev.startElapsed)
-                   : (prev.elapsed !== undefined && prev.elapsed !== null) ? Number(prev.elapsed)
-                   : null;
+    const ini = lista[i];
+    const next = lista[i+1];
 
-      const cMark = (curr.endElapsed !== undefined && curr.endElapsed !== null) ? Number(curr.endElapsed)
-                   : (curr.startElapsed !== undefined && curr.startElapsed !== null) ? Number(curr.startElapsed)
-                   : (curr.elapsed !== undefined && curr.elapsed !== null) ? Number(curr.elapsed)
-                   : null;
+    if (ini.tipo === "timer_iniciado" && next.tipo === "timer_pausado") {
 
-      if(pMark != null && cMark != null){
-        let dur = Math.max(0, Math.floor(cMark - pMark)); // seconds
-        // compute name (prefer explicit name fields, else metadata)
-        const name = curr.name || prev.name || (metaByTimerId[tid] && metaByTimerId[tid].name) || tid;
-        // objetivo: prefer objetivoPorNombre by name, else metaByTimerId targetMin, else null
-        let objetivoMin = null;
-        if(name && objetivoPorNombre[name] !== undefined) objetivoMin = Number(objetivoPorNombre[name]);
-        else if(metaByTimerId[tid] && metaByTimerId[tid].targetMin !== undefined && metaByTimerId[tid].targetMin !== null) objetivoMin = Number(metaByTimerId[tid].targetMin);
-        else if(prev.target !== undefined) objetivoMin = Number(prev.target);
+      const startMark = Number(ini.startElapsed ?? ini.elapsed ?? 0);
+      const endMark   = Number(next.endElapsed ?? next.elapsed ?? 0);
 
-        const diaNum = findDiaForTs(prev.timestamp);
-        const dateKey = prev.timestamp ? (new Date(prev.timestamp)).toISOString().slice(0,10) : null;
+      const dur = Math.max(0, endMark - startMark);
 
-        sessions.push({
-          timerId: tid,
-          name,
-          startTs: prev.timestamp || null,
-          endTs: curr.timestamp || null,
-          startElapsed: pMark,
-          endElapsed: cMark,
-          durationSec: dur,
-          dia: diaNum,
-          dateKey,
-          objetivoMin,
-          closingType: curr.tipo || null
-        });
-      }
-      // if marks missing, skip pair (can't compute duration)
+      const name =
+        ini.name || next.name ||
+        (metaByTimerId[tid] && metaByTimerId[tid].name) ||
+        tid;
+
+      const objetivoMin =
+        (registro.objetivoPorNombre && registro.objetivoPorNombre[name]) ??
+        (metaByTimerId[tid] ? metaByTimerId[tid].targetMin : null) ??
+        null;
+
+      const diaNum = findDiaForTs(ini.timestamp);
+      const dateKey = ini.timestamp ? ini.timestamp.slice(0,10) : null;
+
+      sessions.push({
+        timerId: tid,
+        name,
+        startTs: ini.timestamp,
+        endTs: next.timestamp,
+        startElapsed: startMark,
+        endElapsed: endMark,
+        durationSec: dur,
+        dia: diaNum,
+        dateKey,
+        objetivoMin,
+        closingType: "timer_pausado"
+      });
     }
-  });
+  }
+});
+
 
   // Note: we intentionally DO NOT try to auto-close open sessions by timestamp here using openMap.
   // If you want an "open" session closing at day end/now, we could add it — but durations based on marks require a following mark.
@@ -1590,6 +1583,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
