@@ -1270,7 +1270,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
     // PIE
     const actMap = aggregateByActivity(registroProcesado.sessions, filters);
     const labels = Object.keys(actMap);
-    const data = Object.values(actMap);
+    const data = Object.values(actMap).map(sec => (sec/3600).toFixed(2));
 
     const pieCtx = document.getElementById("pieActividades");
     if(pieCtx){
@@ -1385,6 +1385,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
