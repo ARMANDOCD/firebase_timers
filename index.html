@@ -932,6 +932,9 @@ if(f.nombre){
 
   // update stats view (we'll reuse refrescarEstadisticas which reads from registroProcesado and filters)
   refrescarEstadisticas(); // will apply same filters to charts
+   if (typeof updateExtraCharts === "function") {
+    updateExtraCharts();
+}
 }
 
 // helper to determine dia for event using dias array
@@ -1085,9 +1088,7 @@ function renderRegistroEventos(){
       // init filters UI (populates selects)
       initStatsUI();
 
-       setTimeout(() => {
-    updateExtraCharts();
-}, 100);
+       
     }catch(e){
       console.error("Error en renderRegistroEventos:", e);
     }
@@ -1431,6 +1432,7 @@ document.getElementById("refreshRegistroBtn").onclick = () => renderRegistroEven
 
 </body>
 </html>
+
 
 
 
