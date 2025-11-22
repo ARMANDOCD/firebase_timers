@@ -1074,13 +1074,13 @@ function weekOfDate(isoTs){
 
 // init stats UI
 function initStatsUI(){
-  if(!registroProcesado) return;
   const fd = document.getElementById("filterDia");
   const ff = document.getElementById("filterFecha");
   const fa = document.getElementById("filterActividad");
   const fw = document.getElementById("filterWeek");
   const fm = document.getElementById("filterMonth");
   const fy = document.getElementById("filterYear");
+
   // reset
   fd.innerHTML = `<option value="">Todos los días</option>`;
   ff.innerHTML = `<option value="">Todas las fechas</option>`;
@@ -1088,24 +1088,65 @@ function initStatsUI(){
   fw.innerHTML = `<option value="">Todas las semanas</option>`;
   fm.innerHTML = `<option value="">Todos los meses</option>`;
   fy.innerHTML = `<option value="">Todos los años</option>`;
-  // days
-  registroProcesado.dias.sort((a,b)=>a.dia-b.dia).forEach(d=> fd.innerHTML += `<option value="${d.dia}">Día ${d.dia}</option>`);
-  // fechas unique from sessions' dateKey
-  const fechas = [...new Set(registroProcesado.sessions.map(s=>s.dateKey).filter(x=>x))].sort();
-  fechas.forEach(f=> ff.innerHTML += `<option value="${f}">${f}</option>`);
-  // actividades from sessions names
-  const acts = [...new Set(registroProcesado.sessions.map(s=>s.name).filter(x=>x))].sort();
-  acts.forEach(a=> fa.innerHTML += `<option value="${a}">${a}</option>`);
-  // weeks
-  const weeks = [...new Set(registroProcesado.sessions.map(s=> s.startTs ? weekOfDate(s.startTs) : null).filter(x=>x))].sort();
-  weeks.forEach(w=> fw.innerHTML += `<option value="${w}">${w}</option>`);
-  // months
-  const months = [...new Set(registroProcesado.sessions.map(s=> s.startTs ? (new Date(s.startTs)).toISOString().slice(0,7) : null).filter(x=>x))].sort();
-  months.forEach(m=> fm.innerHTML += `<option value="${m}">${m}</option>`);
-  // years
-  const years = [...new Set(registroProcesado.sessions.map(s=> s.startTs ? String((new Date(s.startTs)).getFullYear()) : null).filter(x=>x))].sort();
-  years.forEach(y=> fy.innerHTML += `<option value="${y}">${y}</option>`);
+
+  // --- 🔥 EXTRAER DESDE LA TABLA (autoridad absoluta) ---
+  const rows = document.querySelectorAll("#registroBody tr");
+
+  const diasSet = new Set();
+  const fechasSet = new Set();
+  const actividadesSet = new Set();
+  const semanasSet = new Set();
+  const mesesSet = new Set();
+  const añosSet = new Set();
+
+  rows.forEach(tr => {
+    const tds = tr.querySelectorAll("td");
+    if(tds.length < 5) return;
+
+    const dia = tds[0].innerText.trim();
+    const actividad = tds[1].innerText.trim();
+    const fechaLocal = tds[4].innerText.trim();
+
+    if(fechaLocal){
+      const date = new Date(fechaLocal);
+      if(!isNaN(date)){
+        const iso = date.toISOString();
+        const dKey = iso.slice(0,10);
+        const mon = iso.slice(0,7);
+        const yr = String(date.getFullYear());
+        const week = weekOfDate(iso);
+
+        fechasSet.add(dKey);
+        mesesSet.add(mon);
+        añosSet.add(yr);
+        semanasSet.add(week);
+      }
+    }
+
+    if(dia && !dia.includes("sin día")) diasSet.add(dia);
+    if(actividad) actividadesSet.add(actividad);
+  });
+
+  // llenar selects
+  [...diasSet].sort((a,b)=> Number(a)-Number(b))
+    .forEach(d => fd.innerHTML += `<option value="${d}">Día ${d}</option>`);
+
+  [...fechasSet].sort()
+    .forEach(f => ff.innerHTML += `<option value="${f}">${f}</option>`);
+
+  [...actividadesSet].sort()
+    .forEach(a => fa.innerHTML += `<option value="${a}">${a}</option>`);
+
+  [...semanasSet].sort()
+    .forEach(w => fw.innerHTML += `<option value="${w}">${w}</option>`);
+
+  [...mesesSet].sort()
+    .forEach(m => fm.innerHTML += `<option value="${m}">${m}</option>`);
+
+  [...añosSet].sort()
+    .forEach(y => fy.innerHTML += `<option value="${y}">${y}</option>`);
 }
+
 
 // filters -> object
 function readFilters(){
@@ -1506,6 +1547,7 @@ grid.appendChild(el);
 
 </body>
 </html>
+
 
 
 
